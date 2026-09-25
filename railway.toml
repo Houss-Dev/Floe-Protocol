@@ -1,9 +1,7 @@
 [build]
 builder = "nixpacks"
-buildCommand = "npm ci --prefix clients/ts/ledgerline && npm ci --prefix app && npm run build --prefix app"
 
 [deploy]
-startCommand = "npm run start --prefix app"
 restartPolicyType = "ON_FAILURE"
 healthcheckPath = "/"
 healthcheckTimeout = 300

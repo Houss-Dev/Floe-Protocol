@@ -1,0 +1,15 @@
+# Monorepo: only install/build the TS client + Next app (skip root Anchor dev deps).
+[phases.setup]
+nixPkgs = ["nodejs_22", "npm-10_x"]
+
+[phases.install]
+cmds = [
+  "npm ci --prefix clients/ts/ledgerline",
+  "npm ci --prefix app",
+]
+
+[phases.build]
+cmds = ["npm run build --prefix app"]
+
+[start]
+cmd = "npm run start --prefix app"
