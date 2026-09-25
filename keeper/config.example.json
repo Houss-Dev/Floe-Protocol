@@ -1,0 +1,9 @@
+{
+  "rpc": "https://api.devnet.solana.com",
+  "keypair": "~/.config/solana/id.json",
+  "programId": "YOUR_PROGRAM_ID",
+  "stateFile": "demo/state.example.json",
+  "prestocksApi": "https://prestocks.com/api/prestocks",
+  "hermes": "https://hermes.pyth.network",
+  "assets": []
+}
