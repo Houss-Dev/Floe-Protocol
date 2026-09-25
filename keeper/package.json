@@ -1,0 +1,27 @@
+{
+  "name": "ledgerline-keeper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/cli.ts --loop",
+    "start": "tsx src/cli.ts --once",
+    "build": "tsc -p tsconfig.json",
+    "keeper:once": "tsx src/cli.ts --once",
+    "keeper:loop": "tsx src/cli.ts --loop",
+    "keeper:config": "tsx src/cli.ts --config config.demo.json",
+    "keeper:selftest": "tsx src/cli.ts --selftest"
+  },
+  "dependencies": {
+    "@ledgerline/ledgerline": "file:../clients/ts/ledgerline",
+    "@solana/kit": "^8.3.0",
+    "@solana/kit-plugin-rpc": "^0.19.0",
+    "@solana/kit-plugin-signer": "^0.19.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

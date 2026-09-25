@@ -1,0 +1,107 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --color-primary: #9391f7;
+  --color-paper: #ffffff;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-paper text-foreground antialiased;
+  background-image:
+    radial-gradient(900px 420px at 50% -5%, rgba(147, 145, 247, 0.14), transparent 60%),
+    radial-gradient(600px 320px at 90% 10%, rgba(26, 158, 92, 0.08), transparent 55%);
+  background-attachment: fixed;
+}
+
+@layer components {
+  .ll-card {
+    @apply rounded-xl border border-line bg-surface shadow-sm;
+  }
+  .ll-card-inset {
+    @apply rounded-lg border border-line bg-surface2;
+  }
+  .ll-card-elevated {
+    @apply rounded-xl border border-line bg-surface shadow-md;
+  }
+
+  .ll-pill {
+    @apply inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-faint;
+  }
+
+  .ll-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-accent2 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95;
+  }
+  .ll-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-line2 bg-surface px-6 py-2.5 text-sm font-medium text-foreground shadow-sm hover:bg-surface2;
+  }
+  .ll-btn-dark {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-foreground px-6 py-2.5 text-sm font-semibold text-paper shadow-sm hover:opacity-90;
+  }
+  .ll-btn-accent {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-green-100 px-6 py-2.5 text-sm font-semibold text-accent hover:bg-green-200;
+  }
+
+  .btn {
+    @apply rounded-lg border border-line bg-surface px-3 py-2 text-xs font-medium text-foreground shadow-sm hover:bg-surface2 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .inp {
+    @apply w-24 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-foreground outline-none focus:border-accent2;
+  }
+
+  .ll-stat {
+    @apply rounded-xl border border-line bg-surface px-4 py-5 shadow-sm;
+  }
+
+  .ll-market-card--purple {
+    @apply flex h-full flex-col rounded-xl border border-violet-200 bg-tint-purple p-5 hover:shadow-md;
+  }
+  .ll-market-card--green {
+    @apply flex h-full flex-col rounded-xl border border-emerald-200 bg-tint-green p-5 hover:shadow-md;
+  }
+  .ll-market-card--blue {
+    @apply flex h-full flex-col rounded-xl border border-sky-200 bg-tint-blue p-5 hover:shadow-md;
+  }
+  .ll-market-card--amber {
+    @apply flex h-full flex-col rounded-xl border border-amber-200 bg-tint-amber p-5 hover:shadow-md;
+  }
+
+  .ll-earn-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-accent;
+  }
+
+  .bg-brand-gradient {
+    background-image: linear-gradient(135deg, #7b3fe4 0%, #9391f7 45%, #b794f6 100%);
+  }
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@layer components {
+  .pro-card {
+    @apply rounded-xl border border-pro-border bg-pro-panel;
+  }
+  .pro-card-inset {
+    @apply rounded-lg border border-pro-border bg-pro-elevated;
+  }
+  .pro-pill {
+    @apply text-[10px] font-semibold uppercase tracking-wider text-pro-faint;
+  }
+  .pro-btn-primary {
+    @apply inline-flex items-center justify-center rounded-lg bg-accent2 px-4 py-2 text-sm font-semibold text-white hover:opacity-90;
+  }
+  .pro-btn-secondary {
+    @apply inline-flex items-center justify-center rounded-lg border border-pro-border bg-pro-elevated px-4 py-2 text-sm text-pro-text hover:bg-pro-hover;
+  }
+}

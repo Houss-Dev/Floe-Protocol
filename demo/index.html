@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Floe — stock-backed credit, two tiers</title>
+<style>
+  :root { --bg:#0b0e14; --panel:#131826; --line:#1f2740; --ink:#e6ebf5; --dim:#8b95ad;
+          --ok:#3ddc97; --warn:#ffb02e; --bad:#ff5470; --accent:#5b8cff; }
+  * { box-sizing:border-box; margin:0 }
+  body { background:var(--bg); color:var(--ink); font:15px/1.5 ui-monospace,"SF Mono",Menlo,Consolas,monospace; padding:28px 4vw 60px }
+  header { display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:6px }
+  h1 { font-size:21px; letter-spacing:.4px }
+  h1 .tag { color:var(--accent) }
+  #meta { color:var(--dim); font-size:12px }
+  #banner { font-size:12.5px; color:var(--warn); margin:8px 0 22px }
+  #banner.live { color:var(--ok) }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:22px; max-width:1180px }
+  @media (max-width:900px){ .grid{grid-template-columns:1fr} }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px 22px }
+  .panel h2 { font-size:15px; margin-bottom:2px }
+  .panel .sub { color:var(--dim); font-size:12px; margin-bottom:16px }
+  .kpis { display:grid; grid-template-columns:1fr 1fr; gap:10px 18px; margin-bottom:14px }
+  .kpi .l { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.7px }
+  .kpi .v { font-size:19px }
+  .kpi .v small { font-size:11px; color:var(--dim) }
+  .bar { position:relative; height:8px; background:#0e1320; border-radius:5px; margin:6px 0 4px; overflow:visible }
+  .bar i { position:absolute; inset:0 auto 0 0; border-radius:5px; background:var(--accent) }
+  .bar u { position:absolute; top:-3px; width:2px; height:14px; background:var(--dim); text-decoration:none }
+  .bar u::after { content:attr(data-t); position:absolute; top:15px; left:-16px; font-size:9.5px; color:var(--dim) }
+  .fresh { margin:14px 0 2px }
+  .fresh .bar i { background:var(--ok) }
+  .fresh.stale .bar i { background:var(--bad) }
+  .fresh.stale { color:var(--bad) }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; margin-top:12px }
+  th { text-align:left; color:var(--dim); font-weight:500; padding:4px 8px 4px 0; border-bottom:1px solid var(--line) }
+  td { padding:6px 8px 6px 0; border-bottom:1px solid #10162a }
+  .pill { font-size:10.5px; padding:1px 8px; border-radius:99px; border:1px solid var(--line); color:var(--dim) }
+  .pill.pre { color:#c9a6ff; border-color:#3a2d55 }
+  .log { margin-top:16px; font-size:12px; color:var(--dim); max-height:120px; overflow:auto }
+  .log b { color:var(--ink); font-weight:600 }
+  .log .x { color:var(--bad) } .log .o { color:var(--ok) }
+  footer { margin-top:30px; color:var(--dim); font-size:11.5px; max-width:1180px }
+</style>
+</head>
+<body>
+<header>
+  <h1>LEDGER<span class="tag">LINE</span> — collateral ledger</h1>
+  <div id="meta">—</div>
+</header>
+<div id="banner">no state yet — run <code>./scripts/demo.sh</code> (or point RPC at devnet)</div>
+
+<div class="grid">
+  <section class="panel" id="pub">
+    <h2>Public equity tier · xStocks</h2>
+    <div class="sub">Pyth price + confidence · session-aware LTV · dividend engine repays</div>
+    <div class="kpis">
+      <div class="kpi"><div class="l">Collateral</div><div class="v" data-k="collateral">$—</div></div>
+      <div class="kpi"><div class="l">Credit line</div><div class="v" data-k="credit">$—</div></div>
+      <div class="kpi"><div class="l">Debt</div><div class="v" data-k="debt">$—</div></div>
+      <div class="kpi"><div class="l">LTV</div><div class="v" data-k="ltv">— <small id="sess"></small></div></div>
+    </div>
+    <div class="bar"><i style="width:0%"></i><u data-t="trg"></u><u data-t="floor"></u></div>
+    <table><thead><tr><th>slot</th><th>asset</th><th>value (keeper est.)</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section class="panel" id="pre">
+    <h2>Pre-IPO tier · PreStocks collateral</h2>
+    <div class="sub">issuer mark, no confidence band → closed-tier LTV only · 120s draw window · divergence-capped</div>
+    <div class="kpis">
+      <div class="kpi"><div class="l">Collateral</div><div class="v" data-k="collateral">$—</div></div>
+      <div class="kpi"><div class="l">Credit line</div><div class="v" data-k="credit">$—</div></div>
+      <div class="kpi"><div class="l">Debt</div><div class="v" data-k="debt">$—</div></div>
+      <div class="kpi"><div class="l">LTV</div><div class="v" data-k="ltv">—</div></div>
+    </div>
+    <div class="fresh"><span data-k="fresh">draw window: —</span>
+      <div class="bar"><i style="width:0%"></i></div>
+    </div>
+    <table><thead><tr><th>slot</th><th>asset</th><th>value (keeper est.)</th></tr></thead><tbody></tbody></table>
+    <div class="log" data-k="log">awaiting keeper actions…</div>
+  </section>
+</div>
+
+<footer>
+  Guards enforced <b>on-chain</b>, not by this page: a mark &gt; cap from the issuer's own price fails the resize;
+  a draw with pre-IPO collateral older than 120s fails; harvest on pre-IPO fails; liquidation between the
+  threshold and the hard floor defers while the market analogue is closed. All numbers come from the line
+  accounts via the keeper; the keeper writes <code>state.json</code>, this page renders it and nothing else.
+</footer>
+
+<script>
+const $ = (r, k) => r.querySelector(`[data-k="${k}"]`);
+const fmt$ = n => n == null ? "—" : "$" + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+async function load() {
+  let st = null;
+  for (const src of ["state.json", "state.example.json"]) {
+    try { const r = await fetch(src, { cache: "no-store" }); if (r.ok) { st = await r.json(); break; } } catch (e) {}
+  }
+  if (!st) return;
+  const banner = document.getElementById("banner");
+  banner.textContent = `keeper state @ ${st.generatedAt} · ${st.network}` + (st.live ? " · LIVE" : " · snapshot");
+  banner.className = st.live ? "live" : "";
+  document.getElementById("meta").textContent = `program ${String(st.programId).slice(0, 8)}…`;
+
+  const lines = st.lines || [];
+  const slotKinds = l => (l.slots || []).map(s => s.marketKind);
+  const pubLine = lines.find(l => slotKinds(l).includes("publicEquity"));
+  const preLine = lines.find(l => slotKinds(l).includes("preIpo"));
+  const render = (root, l) => {
+    if (!l) return;
+    $(root, "collateral").textContent = fmt$(l.collateralUsd);
+    $(root, "credit").textContent = fmt$(l.creditUsd);
+    $(root, "debt").textContent = fmt$(l.debtUsd);
+    $(root, "ltv").firstChild.textContent = (l.ltvBps / 100).toFixed(1) + "% ";
+    if ($("#sess") && l.session) $("#sess").textContent = "· " + l.session;
+    const bars = root.querySelectorAll(".bar i");
+    bars.forEach(b => b.style.width = Math.min(100, l.ltvBps / 100) + "%");
+    const tb = root.querySelector("tbody");
+    tb.innerHTML = (l.slots || []).map(s =>
+      `<tr><td>·</td><td>${s.label} <span class="pill ${s.marketKind === "preIpo" ? "pre" : ""}">${s.marketKind}</span></td><td>${fmt$(s.estimatedUsd)}</td></tr>`).join("");
+    const freshEl = $(root, "fresh");
+    if (freshEl && l.lastSizingAgeSecs != null) {
+      const win = l.preIpoDrawWindowSecs || 120;
+      const left = Math.max(0, win - l.lastSizingAgeSecs);
+      freshEl.parentNode.className = "fresh" + (left <= 0 ? " stale" : "");
+      freshEl.textContent = left > 0 ? `draw window: ${left}s of ${win}s remaining` : "draw frozen — sizing stale, keeper must re-size";
+      freshEl.nextElementSibling.firstElementChild.style.width = (100 - left / win * 100).toFixed(1) + "%";
+    }
+  };
+  render(document.getElementById("pub"), pubLine || lines[0]);
+  render(document.getElementById("pre"), preLine || lines[1] || lines[0]);
+  const log = $(document.getElementById("pre"), "log");
+  if (log) log.innerHTML = (st.recentActions || []).slice(-6).reverse().map(a =>
+    a.ok ? `<div class="o">▸ <b>resize</b> ${String(a.line).slice(0, 6)}… ${a.marks} marks</div>`
+         : `<div class="x">✋ <b>refused</b> ${String(a.error).slice(0, 90)}</div>`).join("") || "no actions yet";
+}
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>

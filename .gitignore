@@ -1,0 +1,62 @@
+# --- secrets (NEVER COMMIT) ---
+.secrets/
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+
+# --- rust / anchor ---
+target/
+**/*.rs.bk
+.anchor/
+test-ledger/
+
+# --- node ---
+node_modules/
+dist/
+.next/
+.turbo/
+*.tsbuildinfo
+.pnpm-store/
+
+# --- keys / localnet ---
+*-keypair.json
+dev-wallet.json
+keeper-wallet.json
+!tests/fixtures/*-keypair.json
+
+# --- local runtime state ---
+demo/state.json
+demo/state.devnet.json
+keeper/config.devnet.json
+
+# --- internal / not for public repo ---
+docs/BUILD_PLAN.md
+docs/BUILD_PLAN_PRE_IPO.md
+docs/RESEARCH.md
+docs/STARTUP_VERIFICATION.md
+docs/TOOLCHAIN.md
+docs/DEVNET_CURRENT.md
+docs/SOLANA_DEV_STACK.md
+demo/VIDEO_SCRIPT.md
+scripts/build_deck.py
+.firecrawl/
+.agents/
+.claude/
+skills-lock.json
+app/scripts-live-flow.cjs
+AGENTS.md
+*.pptx
+scripts/devnet-fresh-*.ps1
+scripts/devnet-reset-local.ps1
+
+# --- logs ---
+logs/
+*.log
+
+# --- editor / os ---
+.DS_Store
+.idea/
+.vscode/
+*.swp

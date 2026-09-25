@@ -1,0 +1,2811 @@
+{
+  "address": "CK5xutaXUwmdcLR8qh7cCZMXJ5fkqopk1P5NZEM3cLrN",
+  "metadata": {
+    "name": "ledgerline",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Stock-backed credit lines on Solana, repaid by dividends"
+  },
+  "instructions": [
+    {
+      "name": "add_asset",
+      "docs": [
+        "Register an xStock mint and its risk parameters. Admin only.",
+        "",
+        "The parameters arrive as an `Asset` value and are copied into the PDA;",
+        "`stock_mint` and `bump` are taken from the accounts, not from the caller."
+      ],
+      "discriminator": [
+        81,
+        53,
+        134,
+        142,
+        243,
+        73,
+        42,
+        179
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "params.stock_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stock_mint",
+          "docs": [
+            "The mint being listed. Must equal `params.stock_mint`."
+          ]
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "Asset"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "close_line",
+      "docs": [
+        "Close the line once debt is repaid and collateral withdrawn.",
+        "",
+        "Returning collateral needs a vault and destination account per mint,",
+        "which does not fit a variable-length account list. The borrower",
+        "withdraws each slot first — which re-checks health — then closes."
+      ],
+      "discriminator": [
+        190,
+        199,
+        74,
+        153,
+        43,
+        6,
+        153,
+        125
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "line",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line.owner",
+                "account": "CreditLine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "line"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "deposit",
+      "docs": [
+        "Move xStocks into the line's vault and record the raw amount plus the",
+        "multiplier that was live at deposit time.",
+        "",
+        "The multiplier is read from the mint's `ScaledUiAmount` extension in",
+        "this instruction. It is never taken from the caller: the multiplier",
+        "decides how much the deposit is worth, so accepting it as an argument",
+        "would let anyone inflate their own collateral."
+      ],
+      "discriminator": [
+        242,
+        35,
+        198,
+        137,
+        82,
+        225,
+        242,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "line",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line.owner",
+                "account": "CreditLine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "line"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "from",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "draw",
+      "docs": [
+        "Disburse USDC against the line. This is what the card terminal calls."
+      ],
+      "discriminator": [
+        61,
+        40,
+        62,
+        184,
+        31,
+        176,
+        24,
+        130
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "line",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line.owner",
+                "account": "CreditLine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "reserve_ata",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "recipient",
+          "docs": [
+            "Where the borrowed USDC goes — the merchant, or the borrower's wallet."
+          ],
+          "writable": true
+        },
+        {
+          "name": "keeper",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "harvest_dividend",
+      "docs": [
+        "Detect a dividend and trim the vault to match. Idempotent.",
+        "",
+        "The multiplier is read from the mint in this instruction, never taken on",
+        "trust. Three independent things have to line up before anything moves:",
+        "",
+        "1. The `effective_ts` argument equals the mint's scheduled timestamp.",
+        "2. That timestamp has passed, and the new multiplier differs from the old.",
+        "3. The slot's recorded baseline equals the mint's current baseline, i.e.",
+        "this bump has not already been harvested.",
+        "",
+        "On top of that the `DividendEvent` PDA is seeded with `effective_ts`, so",
+        "re-running the keeper for the same corporate action cannot create a",
+        "second event. A keeper that crashes mid-flight and retries is safe.",
+        "",
+        "The trimmed tokens go to the protocol treasury; converting them to USDC",
+        "and applying the proceeds is a separate step so the swap route is not",
+        "baked into this instruction."
+      ],
+      "discriminator": [
+        238,
+        185,
+        50,
+        175,
+        80,
+        118,
+        87,
+        234
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "line",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line.owner",
+                "account": "CreditLine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "is the Token-2022 program and that the ScaledUiAmount extension is present."
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Protocol-owned destination for the trimmed tokens, pending conversion."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dividend_event",
+          "docs": [
+            "Seeded with `effective_ts`, so one corporate action can only ever",
+            "produce one event. This is the idempotency guarantee."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  118
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "arg",
+                "path": "effective_ts"
+              }
+            ]
+          }
+        },
+        {
+          "name": "keeper",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "effective_ts",
+          "type": "i64"
+        },
+        {
+          "name": "mark",
+          "type": {
+            "defined": {
+              "name": "PriceMark"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "init_config",
+      "docs": [
+        "Create the global config and the USDC reserve that backs draws."
+      ],
+      "discriminator": [
+        23,
+        235,
+        115,
+        232,
+        168,
+        96,
+        1,
+        231
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "reserve_ata",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  115,
+                  101,
+                  114,
+                  118,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "keeper",
+          "type": "pubkey"
+        },
+        {
+          "name": "fee_bps_draw",
+          "type": "u16"
+        },
+        {
+          "name": "fee_bps_dividend",
+          "type": "u16"
+        },
+        {
+          "name": "base_apr_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "liquidate",
+      "docs": [
+        "Liquidate part of an unhealthy line.",
+        "",
+        "No DEX is involved: the liquidator repays USDC and takes collateral at a",
+        "bonus directly from the vault. That keeps the whole operation inside one",
+        "transaction and avoids depending on pool liquidity, which is exactly what",
+        "is unreliable outside market hours.",
+        "",
+        "Session-aware by construction. If the line is underwater but the market",
+        "is closed and the hard floor has not been breached, this refuses with",
+        "`LiquidationDeferred` rather than dumping collateral into a thin weekend",
+        "pool. The keeper re-evaluates at the open.",
+        "",
+        "Acts on the line's most recent sizing, and refuses if that sizing is",
+        "older than `MAX_SIZING_AGE_SECS`. Liquidating against a stale mark is how",
+        "a solvent borrower gets wiped out."
+      ],
+      "discriminator": [
+        223,
+        179,
+        226,
+        125,
+        48,
+        46,
+        39,
+        74
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "line",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line.owner",
+                "account": "CreditLine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "stock_dest",
+          "docs": [
+            "Liquidator's account for the collateral mint."
+          ],
+          "writable": true
+        },
+        {
+          "name": "usdc_from",
+          "docs": [
+            "Liquidator's USDC."
+          ],
+          "writable": true
+        },
+        {
+          "name": "reserve_ata",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "liquidator",
+          "docs": [
+            "Permissionless: anyone may liquidate and keep the bonus."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "Token program of the collateral mint."
+          ]
+        },
+        {
+          "name": "usdc_token_program",
+          "docs": [
+            "Token program of USDC. It is deliberately a second account: USDC is",
+            "a legacy SPL mint while every collateral mint is Token-2022 (that is",
+            "where the multiplier lives). One instruction cannot CPI both transfer",
+            "kinds through one program id, and `liquidate` is the only instruction",
+            "that moves both tokens at once."
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "repay_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "open_line",
+      "docs": [
+        "Open a credit line for the signer. One line per wallet."
+      ],
+      "discriminator": [
+        99,
+        104,
+        130,
+        198,
+        128,
+        34,
+        27,
+        208
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "line",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "payout_mode",
+          "type": {
+            "defined": {
+              "name": "PayoutMode"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "repay",
+      "docs": [
+        "Repay debt. Called by the user, or by the dividend engine on their behalf."
+      ],
+      "discriminator": [
+        234,
+        103,
+        67,
+        82,
+        208,
+        234,
+        219,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "line",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line.owner",
+                "account": "CreditLine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "reserve_ata",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "from",
+          "writable": true
+        },
+        {
+          "name": "payer_authority",
+          "docs": [
+            "Either the borrower or the keeper (for an automated dividend repayment)."
+          ],
+          "signer": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "resize_line",
+      "docs": [
+        "Recompute the credit limit from the current marks and session.",
+        "",
+        "Asset accounts are passed in `remaining_accounts`, one per collateral",
+        "slot, because the count varies and Anchor cannot size a variable list.",
+        "Each is validated as a genuine `Asset` of this program by its owner and",
+        "discriminator, then matched to a slot by mint.",
+        "",
+        "In the MVP the marks come from the keeper rather than from an on-chain",
+        "Pyth receiver account. The keeper is trusted, and the marks are logged.",
+        "Swapping in an on-chain `PriceUpdateV2` read is the production fix."
+      ],
+      "discriminator": [
+        49,
+        83,
+        35,
+        66,
+        142,
+        174,
+        73,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "line",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line.owner",
+                "account": "CreditLine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "keeper",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "marks",
+          "type": {
+            "vec": {
+              "defined": {
+                "name": "PriceMark"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "set_asset_params",
+      "docs": [
+        "Update risk parameters for a listed mint. Admin only."
+      ],
+      "discriminator": [
+        147,
+        9,
+        214,
+        39,
+        16,
+        146,
+        51,
+        4
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset_account.stock_mint",
+                "account": "Asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "Asset"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "set_holiday",
+      "docs": [
+        "Add or remove a market closure not already in the built-in holiday table."
+      ],
+      "discriminator": [
+        242,
+        10,
+        104,
+        113,
+        15,
+        8,
+        84,
+        240
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "ts",
+          "type": "i64"
+        },
+        {
+          "name": "add",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "set_operating_state",
+      "discriminator": [
+        54,
+        214,
+        106,
+        120,
+        71,
+        207,
+        207,
+        108
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "operating_state",
+          "type": {
+            "defined": {
+              "name": "OperatingState"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "set_payout_mode",
+      "discriminator": [
+        219,
+        233,
+        73,
+        149,
+        141,
+        171,
+        218,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "line",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line.owner",
+                "account": "CreditLine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "line"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "payout_mode",
+          "type": {
+            "defined": {
+              "name": "PayoutMode"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "settle_dividend",
+      "docs": [
+        "Apply a harvested dividend: convert it to USDC and route it.",
+        "",
+        "`harvest_dividend` moved raw tokens to the treasury and recorded exactly",
+        "what they are worth. This instruction delivers that amount in USDC and",
+        "applies it according to the borrower's payout mode.",
+        "",
+        "The amount is not an argument. It is read from the `DividendEvent` the",
+        "harvest wrote, so the keeper cannot claim a larger dividend than the",
+        "on-chain arithmetic produced. Under-delivering is possible; over-crediting",
+        "a borrower is not. The event is also single-use, so it cannot be settled",
+        "twice."
+      ],
+      "discriminator": [
+        221,
+        153,
+        84,
+        154,
+        213,
+        67,
+        27,
+        63
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "line",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line.owner",
+                "account": "CreditLine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dividend_event",
+          "docs": [
+            "The event written by `harvest_dividend`. Its `net_usd` is the amount",
+            "settled here, so it cannot be inflated."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  118
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dividend_event.line",
+                "account": "DividendEvent"
+              },
+              {
+                "kind": "account",
+                "path": "dividend_event.mint",
+                "account": "DividendEvent"
+              },
+              {
+                "kind": "account",
+                "path": "dividend_event.effective_ts",
+                "account": "DividendEvent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "reserve_ata",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "usdc_from",
+          "docs": [
+            "Keeper's USDC, holding the proceeds of the swap."
+          ],
+          "writable": true
+        },
+        {
+          "name": "user_usdc",
+          "docs": [
+            "Borrower's USDC. Only required when the payout mode is `Payout`."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "keeper",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdraw",
+      "docs": [
+        "Return collateral, but only if the line stays healthy afterwards."
+      ],
+      "discriminator": [
+        183,
+        18,
+        70,
+        156,
+        148,
+        109,
+        161,
+        34
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "line",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line.owner",
+                "account": "CreditLine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "line"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "to",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Asset",
+      "discriminator": [
+        234,
+        180,
+        241,
+        252,
+        139,
+        224,
+        160,
+        8
+      ]
+    },
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "CreditLine",
+      "discriminator": [
+        220,
+        226,
+        205,
+        24,
+        220,
+        151,
+        129,
+        104
+      ]
+    },
+    {
+      "name": "DividendEvent",
+      "discriminator": [
+        83,
+        69,
+        126,
+        8,
+        161,
+        227,
+        202,
+        24
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "DepositEvent",
+      "discriminator": [
+        120,
+        248,
+        61,
+        83,
+        31,
+        142,
+        107,
+        144
+      ]
+    },
+    {
+      "name": "DividendHarvestedEvent",
+      "discriminator": [
+        110,
+        255,
+        185,
+        86,
+        185,
+        186,
+        15,
+        142
+      ]
+    },
+    {
+      "name": "DividendSettledEvent",
+      "discriminator": [
+        49,
+        248,
+        123,
+        147,
+        204,
+        85,
+        138,
+        39
+      ]
+    },
+    {
+      "name": "DrawEvent",
+      "discriminator": [
+        232,
+        110,
+        40,
+        177,
+        104,
+        185,
+        49,
+        59
+      ]
+    },
+    {
+      "name": "LiquidationEvent",
+      "discriminator": [
+        3,
+        13,
+        21,
+        93,
+        173,
+        136,
+        72,
+        144
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Paused",
+      "msg": "Protocol is paused"
+    },
+    {
+      "code": 6001,
+      "name": "Unauthorized",
+      "msg": "Signer is not the admin"
+    },
+    {
+      "code": 6002,
+      "name": "NotKeeper",
+      "msg": "Signer is not the configured keeper"
+    },
+    {
+      "code": 6003,
+      "name": "UnsupportedAsset",
+      "msg": "Asset is not supported or is disabled"
+    },
+    {
+      "code": 6004,
+      "name": "AssetExists",
+      "msg": "Asset already configured"
+    },
+    {
+      "code": 6005,
+      "name": "CollateralFull",
+      "msg": "All collateral slots are in use"
+    },
+    {
+      "code": 6006,
+      "name": "SlotNotFound",
+      "msg": "No collateral slot holds that mint"
+    },
+    {
+      "code": 6007,
+      "name": "BadDecimals",
+      "msg": "Asset decimals must be 6 (xStocks convention)"
+    },
+    {
+      "code": 6008,
+      "name": "InsufficientCredit",
+      "msg": "Requested amount exceeds available credit"
+    },
+    {
+      "code": 6009,
+      "name": "WithdrawalUnsafe",
+      "msg": "Withdrawal would breach the liquidation threshold"
+    },
+    {
+      "code": 6010,
+      "name": "InsufficientCollateral",
+      "msg": "The line holds less of this collateral than the request asks for"
+    },
+    {
+      "code": 6011,
+      "name": "OutstandingDebt",
+      "msg": "Repay the outstanding debt before closing the line"
+    },
+    {
+      "code": 6012,
+      "name": "CollateralRemaining",
+      "msg": "Withdraw all collateral before closing the line"
+    },
+    {
+      "code": 6013,
+      "name": "LineExists",
+      "msg": "A credit line already exists for this owner"
+    },
+    {
+      "code": 6014,
+      "name": "InsufficientLiquidity",
+      "msg": "Reserve does not have enough USDC liquidity"
+    },
+    {
+      "code": 6015,
+      "name": "StalePrice",
+      "msg": "Reference price is missing or stale"
+    },
+    {
+      "code": 6016,
+      "name": "LowConfidence",
+      "msg": "Price confidence interval is unacceptably wide"
+    },
+    {
+      "code": 6017,
+      "name": "FeedMismatch",
+      "msg": "Supplied feed does not match the configured asset"
+    },
+    {
+      "code": 6018,
+      "name": "InvalidParams",
+      "msg": "Risk parameters are inconsistent"
+    },
+    {
+      "code": 6019,
+      "name": "LiquidationDeferred",
+      "msg": "Liquidation is deferred until the market reopens"
+    },
+    {
+      "code": 6020,
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6021,
+      "name": "Overflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6022,
+      "name": "Math",
+      "msg": "Fixed-point conversion failed"
+    },
+    {
+      "code": 6023,
+      "name": "SessionError",
+      "msg": "Session could not be determined"
+    },
+    {
+      "code": 6024,
+      "name": "AlreadyHarvested",
+      "msg": "This corporate action has already been harvested"
+    },
+    {
+      "code": 6025,
+      "name": "CorporateActionRejected",
+      "msg": "Multiplier change is too large to be a dividend"
+    },
+    {
+      "code": 6026,
+      "name": "AlreadySettled",
+      "msg": "This dividend event has already been settled"
+    },
+    {
+      "code": 6027,
+      "name": "ReinvestNotImplemented",
+      "msg": "Reinvest payout mode is not implemented yet"
+    },
+    {
+      "code": 6028,
+      "name": "MathOverflow",
+      "msg": "Fixed-point overflow"
+    },
+    {
+      "code": 6029,
+      "name": "MathDivByZero",
+      "msg": "Division by zero"
+    },
+    {
+      "code": 6030,
+      "name": "MathNotFinite",
+      "msg": "Value is NaN or infinite"
+    },
+    {
+      "code": 6031,
+      "name": "MathNegative",
+      "msg": "Negative value where unsigned expected"
+    },
+    {
+      "code": 6032,
+      "name": "MathOutOfRange",
+      "msg": "Value out of supported range"
+    },
+    {
+      "code": 6033,
+      "name": "OperatingStateForbids",
+      "msg": "The protocol's operating state forbids this action"
+    },
+    {
+      "code": 6034,
+      "name": "ValuationDivergenceTooLarge",
+      "msg": "Pre-IPO mark diverged from the issuer's published mark beyond the asset's cap"
+    },
+    {
+      "code": 6035,
+      "name": "PreIpoSizingStale",
+      "msg": "A pre-IPO draw requires a sizing no older than two minutes"
+    },
+    {
+      "code": 6036,
+      "name": "PreIpoHarvestUnsupported",
+      "msg": "Pre-IPO collateral pays no dividends; harvest does not apply"
+    },
+    {
+      "code": 6037,
+      "name": "MintExtensionNotAllowed",
+      "msg": "The collateral mint carries an extension this listing policy refuses"
+    },
+    {
+      "code": 6038,
+      "name": "TransferFeeTooHigh",
+      "msg": "The collateral mint's transfer fee exceeds the asset's declared maximum"
+    }
+  ],
+  "types": [
+    {
+      "name": "Asset",
+      "docs": [
+        "A supported xStock mint and its risk parameters.",
+        "",
+        "This is its own PDA, seeded `[ASSET_SEED, stock_mint]`, rather than an entry",
+        "in an array inside `Config`. The reason is the Solana stack: Anchor copies",
+        "each deserialised account onto the 4096-byte stack frame, and a `Config`",
+        "holding `[AssetConfig; 16]` is ~2.4 KB, which alone blew the frame limit of",
+        "every instruction that touched it. Separate accounts also remove the cap on",
+        "how many assets the protocol can list."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "stock_mint",
+            "docs": [
+              "The Token-2022 mint carrying the `ScaledUiAmount` extension."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "equity_feed_id",
+            "docs": [
+              "Pyth `Equity.US.<TICKER>/USD` — the real underlying. Only exists in",
+              "regular session, which is exactly why the haircut widens."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "token_feed_id",
+            "docs": [
+              "Pyth `Crypto.<TICKER>X/USD` — the token itself. Trades 24/7."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "max_ltv_regular_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_ltv_extended_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_ltv_closed_bps",
+            "type": "u16"
+          },
+          {
+            "name": "liq_threshold_bps",
+            "docs": [
+              "Liquidation triggers at this LTV, using the conservative mark."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "liq_floor_bps",
+            "docs": [
+              "Never liquidate above this, even outside market hours. Hard floor."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "liquidation_bonus_bps",
+            "docs": [
+              "Discount a liquidator gets on the seized collateral, in bps. This is the",
+              "incentive to liquidate; without it nobody would bother."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "max_conf_ratio_bps",
+            "docs": [
+              "Above this confidence ratio the LTV starts decaying."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "conf_floor_bps",
+            "docs": [
+              "Confidence floor applied when the equity feed is stale (`Closed`)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_multiplier_delta_bps",
+            "docs": [
+              "Largest multiplier change accepted as a dividend, in bps. A dividend",
+              "moves the multiplier by a fraction of a percent; a 2:1 split moves it",
+              "by 10,000 bps. Anything above this is treated as a corporate action we",
+              "do not understand and is refused rather than paid out."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "min_pool_depth_usd",
+            "docs": [
+              "Minimum on-chain pool depth, in whole USD, before the asset is usable."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "decimals",
+            "type": "u8"
+          },
+          {
+            "name": "enabled",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "market_kind",
+            "docs": [
+              "Public equity vs. pre-IPO collateral. Selects the rule set; see",
+              "`MarketKind`. Immutable after listing (`set_asset_params` will not",
+              "touch it — flipping the valuation rules under live positions would",
+              "be repricing someone's collateral behind their back)."
+            ],
+            "type": {
+              "defined": {
+                "name": "MarketKind"
+              }
+            }
+          },
+          {
+            "name": "max_valuation_divergence_bps",
+            "docs": [
+              "Pre-IPO only: largest absolute divergence in bps between the sized",
+              "Pyth mark and the issuer's own published mark that `resize_line` will",
+              "accept. `validate_asset` forces 1..=1000 for PreIpo assets, so the",
+              "guard can never be switched off by leaving this at 0 where it applies."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "max_transfer_fee_bps",
+            "docs": [
+              "Maximum transfer-fee basis points the mint may charge, declared at",
+              "listing and checked against the mint's own TransferFeeConfig in",
+              "`add_asset` (the max of the active and scheduled epochs). Deposits",
+              "credit the vault's *measured* delta, never the requested amount, so",
+              "a fee can only ever reduce recorded collateral, never inflate debt."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "issuer_controls",
+            "docs": [
+              "Issuer control flags, recorded from the mint at listing. See CTRL_*."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "docs": [
+              "Reserved for future fields; keeps the Borsh layout upgrade-safe."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                58
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "CollateralSlot",
+      "docs": [
+        "One collateral position. `raw_amount` is the on-chain token amount and is",
+        "never the UI amount — see the ScaledUiAmount finding in docs/RESEARCH.md."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault_ata",
+            "docs": [
+              "PDA-owned token account holding this mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "raw_amount",
+            "docs": [
+              "Raw token amount, minor units (6dp for xStocks)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "multiplier_bits",
+            "docs": [
+              "The mint's ScaledUiAmount multiplier at deposit time, as f64 bits.",
+              "Used to compute the dividend delta later."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "market_kind",
+            "docs": [
+              "Copied from the asset when the slot was created: decides which",
+              "valuation/sizing rules this position lives under (`MarketKind`).",
+              "Stored on the slot, not read from the asset account at draw time,",
+              "because `draw` deliberately does not load per-asset accounts — the",
+              "line must stay a single-account hot path."
+            ],
+            "type": {
+              "defined": {
+                "name": "MarketKind"
+              }
+            }
+          },
+          {
+            "name": "in_use",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "docs": [
+        "Global protocol configuration. PDA seeded `[CONFIG_SEED]`.",
+        "",
+        "Deliberately small — see the note on `Asset` about the stack frame limit."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "keeper",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_reserve",
+            "docs": [
+              "PDA holding the USDC that backs draws."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "reserve_bump",
+            "docs": [
+              "Bump of the USDC reserve token account, needed to sign disbursements."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "extra_holidays",
+            "type": {
+              "array": [
+                "i64",
+                32
+              ]
+            }
+          },
+          {
+            "name": "n_holidays",
+            "type": "u8"
+          },
+          {
+            "name": "fee_bps_draw",
+            "type": "u16"
+          },
+          {
+            "name": "fee_bps_dividend",
+            "type": "u16"
+          },
+          {
+            "name": "base_apr_bps",
+            "type": "u16"
+          },
+          {
+            "name": "operating_state",
+            "type": {
+              "defined": {
+                "name": "OperatingState"
+              }
+            }
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CreditLine",
+      "docs": [
+        "A borrower's credit line. PDA seeded `[LINE_SEED, owner]`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "usdc_debt",
+            "docs": [
+              "Principal outstanding, USDC minor units (6dp)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "accrued_interest",
+            "type": "u64"
+          },
+          {
+            "name": "interest_apr_bps",
+            "type": "u16"
+          },
+          {
+            "name": "last_interest_ts",
+            "type": "i64"
+          },
+          {
+            "name": "collateral",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "CollateralSlot"
+                  }
+                },
+                4
+              ]
+            }
+          },
+          {
+            "name": "n_collateral",
+            "type": "u8"
+          },
+          {
+            "name": "last_sizing_ts",
+            "docs": [
+              "Last recomputation of the credit limit."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "last_session",
+            "type": {
+              "defined": {
+                "name": "Session"
+              }
+            }
+          },
+          {
+            "name": "collateral_usdc",
+            "docs": [
+              "Total collateral value at last sizing, USDC 6dp."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "credit_limit_usdc",
+            "docs": [
+              "Credit limit at last sizing, USDC 6dp."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "available_credit_usdc",
+            "docs": [
+              "`max(0, credit_limit - debt - interest)`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "dividends_received",
+            "docs": [
+              "Lifetime USDC harvested from dividends."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "dividends_to_repay",
+            "docs": [
+              "Lifetime USDC of that which repaid debt."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "dividends_paid_out",
+            "docs": [
+              "Lifetime USDC of that which was paid to the borrower."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "payout_mode",
+            "type": {
+              "defined": {
+                "name": "PayoutMode"
+              }
+            }
+          },
+          {
+            "name": "opened_at",
+            "type": "i64"
+          },
+          {
+            "name": "updated_at",
+            "type": "i64"
+          },
+          {
+            "name": "event_seq",
+            "docs": [
+              "Monotonic counter for emitted events. Off-chain consumers (the demo's",
+              "activity feed) can detect a missed event — a gap in `seq` — instead",
+              "of silently missing, say, a liquidation."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "_reserved",
+            "docs": [
+              "Reserved for future fields; keeps the Borsh layout upgrade-safe. One",
+              "byte less than `Asset`'s tail because `CollateralSlot` grew by the",
+              "`market_kind` byte."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                63
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "DepositEvent",
+      "docs": [
+        "Emitted events. Each carries the line's `seq` so a consumer that missed",
+        "one can tell. These are *not* the source of truth — accounts are — but",
+        "they make the demo's activity feed trivial to build without rescanning",
+        "accounts per block."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "line",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Raw token units actually received by the vault (after any transfer",
+              "fee), never the amount the sender requested."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "seq",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DividendEvent",
+      "docs": [
+        "One harvested dividend. PDA seeded `[DIV_SEED, line, mint, effective_ts]`.",
+        "",
+        "Because `effective_ts` is part of the address, a keeper that crashes",
+        "mid-flight and retries cannot create a second event for the same corporate",
+        "action. That idempotency is the single most important safety property here."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "line",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "effective_ts",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "mult_before_bits",
+            "type": "u64"
+          },
+          {
+            "name": "mult_after_bits",
+            "type": "u64"
+          },
+          {
+            "name": "raw_held",
+            "type": "u64"
+          },
+          {
+            "name": "shares_before",
+            "docs": [
+              "Fixed-point (1e9) share counts before and after the trim."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "shares_after",
+            "type": "u128"
+          },
+          {
+            "name": "gross_usd",
+            "type": "u64"
+          },
+          {
+            "name": "fee_usd",
+            "type": "u64"
+          },
+          {
+            "name": "net_usd",
+            "type": "u64"
+          },
+          {
+            "name": "raw_trimmed",
+            "type": "u64"
+          },
+          {
+            "name": "applied_to_debt",
+            "type": "u64"
+          },
+          {
+            "name": "paid_to_user",
+            "type": "u64"
+          },
+          {
+            "name": "swap_signature",
+            "type": "pubkey"
+          },
+          {
+            "name": "harvested_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DividendHarvestedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "line",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "effective_ts",
+            "type": "i64"
+          },
+          {
+            "name": "net_usd",
+            "docs": [
+              "USDC of dividend value converted and applied (6dp)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "raw_trimmed",
+            "docs": [
+              "Collateral trimmed to keep share-count parity after the multiplier bump."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "seq",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DividendSettledEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "line",
+            "type": "pubkey"
+          },
+          {
+            "name": "applied_to_debt",
+            "type": "u64"
+          },
+          {
+            "name": "paid_to_user",
+            "type": "u64"
+          },
+          {
+            "name": "seq",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DrawEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "line",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "USDC disbursed to the borrower (6dp minor units)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_debt_increase",
+            "docs": [
+              "Principal + draw fee added to debt."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "seq",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Fixed",
+      "docs": [
+        "A non-negative fixed-point number with `DP` decimals, stored as a `u128`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "v",
+            "type": "u128"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LiquidationEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "line",
+            "type": "pubkey"
+          },
+          {
+            "name": "repaid",
+            "docs": [
+              "USDC of debt the liquidator repaid."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "seized",
+            "docs": [
+              "Collateral raw units seized (value includes the bonus)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "seq",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketKind",
+      "docs": [
+        "Which valuation and sizing rules apply to an asset.",
+        "",
+        "`PublicEquity` is every xStock: Pyth price + confidence, session-aware",
+        "LTV, dividend harvest. `PreIpo` is PreStocks collateral (OpenAI,",
+        "Anthropic, SpaceX shares): a single issuer-published mark with **no",
+        "confidence band at all**, so the protocol refuses to trust its price the",
+        "way it trusts a market feed — LTV is capped at the closed-session tier no",
+        "matter the clock, a draw requires a sizing from the last two minutes, and",
+        "the mark may not diverge from the issuer's own published mark beyond the",
+        "asset's configured cap. No dividends exist before an IPO, so harvest is",
+        "not part of this rule set — refusing it is safer than pretending."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "PublicEquity"
+          },
+          {
+            "name": "PreIpo"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OperatingState",
+      "docs": [
+        "Two-level pause, so a bad keeper or a bad feed does not force an",
+        "all-or-nothing switch. Both non-Normal states keep the *unwinding* path",
+        "open — repay, withdraw, resize, liquidate, settle — because an incident",
+        "must never trap collateral: the borrower can always get out, and the",
+        "protocol can always be made whole. `Halt` additionally freezes harvest",
+        "(it would be mutating positions against a feed nobody trusts)."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Normal"
+          },
+          {
+            "name": "PauseDeposits"
+          },
+          {
+            "name": "Halt"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PayoutMode",
+      "docs": [
+        "What the borrower wants done with a harvested dividend."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "RepayDebt"
+          },
+          {
+            "name": "Payout"
+          },
+          {
+            "name": "Reinvest"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PriceMark",
+      "docs": [
+        "A price mark for one asset at one instant, in USD fixed-point (1e9)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "price",
+            "docs": [
+              "USD per whole share."
+            ],
+            "type": {
+              "defined": {
+                "name": "Fixed"
+              }
+            }
+          },
+          {
+            "name": "conf",
+            "docs": [
+              "Absolute confidence interval, USD per whole share."
+            ],
+            "type": {
+              "defined": {
+                "name": "Fixed"
+              }
+            }
+          },
+          {
+            "name": "publish_ts",
+            "docs": [
+              "Unix timestamp of the underlying feed update."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "dislocation_bps",
+            "docs": [
+              "`(token_feed / equity_feed) - 1`, in basis points. Always surfaced to the",
+              "user, even when it is large — that honesty is the point."
+            ],
+            "type": "i32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Session",
+      "docs": [
+        "Market session, derived from `Clock` + a holiday table.",
+        "",
+        "The session drives the haircut: the reference equity feed does not exist outside",
+        "US market hours, so the buffer widens when the underlying market is dark."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Regular"
+          },
+          {
+            "name": "Extended"
+          },
+          {
+            "name": "Overnight"
+          },
+          {
+            "name": "Closed"
+          }
+        ]
+      }
+    }
+  ]
+}

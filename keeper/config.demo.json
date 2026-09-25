@@ -1,0 +1,38 @@
+﻿{
+  "rpc": "http://127.0.0.1:8899",
+  "keypair": ".anchor/demo-keypair.json",
+  "programId": "CK5xutaXUwmdcLR8qh7cCZMXJ5fkqopk1P5NZEM3cLrN",
+  "stateFile": "demo/state.json",
+  "prestocksApi": "https://prestocks.com/api/prestocks",
+  "hermes": "https://hermes.pyth.network",
+  "assets": [
+    {
+      "label": "MOCK-AAPLx (public tier)",
+      "mint": "6E4neyM7JyaJvT6dLrZJZwBu38is8JzwQ5hQMqQ8RXX7",
+      "marketKind": "publicEquity",
+      "sizing": {
+        "source": "static",
+        "priceUsd": 100,
+        "confUsd": 0.5
+      },
+      "issuer": {
+        "source": "static",
+        "priceUsd": 100
+      }
+    },
+    {
+      "label": "MOCK-OPENAI (pre-IPO tier)",
+      "mint": "E6ScSgVghHJXhW2AaM6xpw5q8WaQuSX2z7QN2o6XVLWY",
+      "marketKind": "preIpo",
+      "sizing": {
+        "source": "static",
+        "priceUsd": 100,
+        "confUsd": 0.5
+      },
+      "issuer": {
+        "source": "static",
+        "priceUsd": 100
+      }
+    }
+  ]
+}

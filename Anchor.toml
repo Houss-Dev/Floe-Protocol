@@ -1,0 +1,30 @@
+[toolchain]
+anchor_version = "0.32.2"
+solana_version = "2.1.21"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.devnet]
+ledgerline = "CK5xutaXUwmdcLR8qh7cCZMXJ5fkqopk1P5NZEM3cLrN"
+
+[programs.localnet]
+ledgerline = "CK5xutaXUwmdcLR8qh7cCZMXJ5fkqopk1P5NZEM3cLrN"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[test]
+startup_wait = 5000
+shutdown_wait = 2000
+upgradeable = false
+
+[test.validator]
+bind_address = "0.0.0.0"
+ledger = ".anchor/test-ledger"
+rpc_port = 8899
