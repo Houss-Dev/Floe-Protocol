@@ -4,8 +4,8 @@ nixPkgs = ["nodejs_22", "npm-10_x"]
 
 [phases.install]
 cmds = [
-  "npm ci --prefix clients/ts/ledgerline",
-  "npm ci --prefix app",
+  "npm install --prefix clients/ts/ledgerline --no-audit --no-fund",
+  "npm install --prefix app --no-audit --no-fund",
 ]
 
 [phases.build]
