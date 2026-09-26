@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   Menu,
   X,
+  Home,
 } from "lucide-react";
 import { FLOE_GITHUB_URL } from "../lib/brand";
 import { FloeBrandIcon } from "./FloeBrandIcon";
@@ -29,7 +30,9 @@ function NavItem({
   onNavigate?: () => void;
 }) {
   const path = usePathname();
-  const active = path === href || (href !== "/dashboard" && path.startsWith(href));
+  const active =
+    path === href ||
+    (href !== "/" && href !== "/dashboard" && path.startsWith(href));
   return (
     <Link
       href={href}
@@ -50,10 +53,10 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <>
       <div className="border-b border-pro-border px-4 py-5">
-        <Link href="/dashboard" onClick={onNavigate} className="flex items-center gap-2.5">
+        <Link href="/" onClick={onNavigate} className="flex items-center gap-2.5" title="Back to marketing home">
           <FloeBrandIcon size={26} />
           <div>
-            <div className="text-sm font-semibold leading-tight">Floe</div>
+            <div className="text-sm font-semibold leading-tight">Floe Protocol</div>
             <div className="text-[10px] uppercase tracking-wider text-pro-faint">Pro · devnet</div>
           </div>
         </Link>
@@ -63,6 +66,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
         <div>
           <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-pro-faint">Overview</p>
           <div className="space-y-0.5">
+            <NavItem href="/" label="Home" icon={Home} onNavigate={onNavigate} />
             <NavItem href="/dashboard" label="Dashboard" icon={LayoutDashboard} onNavigate={onNavigate} />
           </div>
         </div>
@@ -168,12 +172,21 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             >
               <Menu className="h-5 w-5" aria-hidden="true" />
             </button>
-            <Link href="/dashboard" className="flex items-center gap-2">
+            <Link href="/" className="flex items-center gap-2" title="Back to marketing home">
               <FloeBrandIcon size={24} />
               <span className="text-sm font-semibold">Floe</span>
             </Link>
           </div>
-          <p className="hidden text-xs text-pro-faint md:block">Credit line · tokenized stock collateral · Solana devnet</p>
+          <div className="hidden min-w-0 flex-1 items-center gap-3 md:flex">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-pro-muted transition hover:bg-pro-hover hover:text-pro-text"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              Home
+            </Link>
+            <p className="truncate text-xs text-pro-faint">Credit line · tokenized stock collateral · Solana devnet</p>
+          </div>
           <WalletButton />
         </header>
         <main className="flex-1 overflow-x-hidden p-4 md:p-6 lg:p-8">{children}</main>

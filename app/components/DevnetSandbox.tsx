@@ -56,6 +56,21 @@ function b64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
+async function accountExists(address: string): Promise<boolean> {
+  const res = await fetch(RPC_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "getAccountInfo",
+      params: [address, { encoding: "base64" }],
+    }),
+  });
+  const json = await res.json();
+  return json.result?.value != null;
+}
+
 async function readTokenAccount(address: string): Promise<{ owner: string; amount: bigint } | null> {
   const res = await fetch(RPC_URL, {
     method: "POST",
@@ -115,13 +130,17 @@ async function tokenAccountForWallet(
 function errText(e: any): string {
   const parts = [e?.message ?? String(e)];
   let cur = e?.cause;
-  for (let i = 0; i < 4 && cur; i++) {
+  for (let i = 0; i < 6 && cur; i++) {
     if (cur.message && !parts.includes(cur.message)) parts.push(cur.message);
+    if (String(cur.message ?? cur).includes("7050003") || String(cur).includes("7050003")) {
+      parts.push(
+        "Root cause: an account in this transaction does not exist on devnet (often missing config/asset, credit line not opened, or no mock-stock token account). Check config ✓ asset ✓ line ✓ in the panel above."
+      );
+    }
     const logs = cur.context?.logs ?? cur.logs;
-    if (Array.isArray(logs)) {
+    if (Array.isArray(logs) && logs.length) {
       const hit = logs.filter((l: string) => /Error|failed|denied|custom/i.test(l)).slice(-8);
       if (hit.length) parts.push(hit.join(" | "));
-      break;
     }
     cur = cur.cause;
   }
@@ -297,7 +316,16 @@ export function DevnetSandbox() {
       return res.context.signature;
     },
     deposit: async (shares: number) => {
+      if (!Number.isFinite(shares) || shares <= 0) {
+        throw new Error("Enter a positive number of shares to deposit.");
+      }
       const resolvedPdas = await pdas;
+      const missing: string[] = [];
+      if (!(await accountExists(resolvedPdas!.config))) missing.push("config (run devnet bootstrap or Init config)");
+      if (!(await accountExists(resolvedPdas!.asset))) missing.push("asset (Add asset / bootstrap)");
+      if (missing.length) {
+        throw new Error(`On-chain setup missing: ${missing.join(", ")}.`);
+      }
       const lineAcc = await client.ledgerline.accounts.creditLine.fetchMaybe(resolvedPdas!.line);
       if (!lineAcc.exists) {
         await client.ledgerline.instructions.openLine({
@@ -306,6 +334,10 @@ export function DevnetSandbox() {
           owner: client.identity,
           payoutMode: PayoutMode.RepayDebt,
         }).sendTransaction();
+        const again = await client.ledgerline.accounts.creditLine.fetchMaybe(resolvedPdas!.line);
+        if (!again.exists) {
+          throw new Error("Open line did not create a credit line PDA — check devnet SOL and console.");
+        }
       }
       const from = await tokenAccountForWallet(
         wpk!,
@@ -327,6 +359,9 @@ export function DevnetSandbox() {
       return res.context.signature;
     },
     resize: async () => {
+      if (!state?.line) {
+        throw new Error(`No line for this wallet yet — click "Open line" first, then Resize.`);
+      }
       if (state?.config?.keeper && wpk && String(state.config.keeper) !== wpk) {
         throw new Error(
           `Resize is keeper-signed. Config keeper is ${String(state.config.keeper).slice(0, 8)}… — your wallet is not the keeper. From repo root (Floe): node scripts/keeper-draw.cjs ${wpk} 50`
