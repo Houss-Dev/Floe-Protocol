@@ -71,7 +71,7 @@ export default function DashboardPage() {
       <div className="mx-auto max-w-5xl space-y-8">
         <div>
           <p className="pro-pill">Dashboard</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-pro-text md:text-3xl">Your credit line</h1>
+          <h1 className="font-condensed mt-1 text-4xl uppercase tracking-tight text-pro-text md:text-5xl">Your credit line</h1>
           <p className="mt-1 text-sm text-pro-muted">
             {connected?.account
               ? "Connected — actions below use your wallet on devnet."
@@ -80,18 +80,18 @@ export default function DashboardPage() {
         </div>
 
         {!connected?.account && (
-          <div className="pro-card border-accent2/30 bg-accent2/10 p-4 text-sm text-pro-muted">
+          <div className="pro-card border-hot/30 bg-hot/10 p-4 text-sm text-pro-muted">
             Connect in the top right to interact with the program. Demo numbers below illustrate session-aware sizing.
           </div>
         )}
 
         <div className="grid gap-4 lg:grid-cols-3">
-          <div className="pro-card border-accent/25 bg-pro-elevated p-6 lg:col-span-2">
-            <div className="inline-flex items-center gap-2 rounded-full bg-accent/15 px-2.5 py-1 text-xs font-semibold text-accent">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+          <div className="pro-card bg-pro-elevated p-6 lg:col-span-2">
+            <div className="inline-flex items-center gap-2 rounded-full bg-hot/15 px-2.5 py-1 text-xs font-semibold text-hot">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-hot" />
               Available to spend
             </div>
-            <div className="mt-3 text-4xl font-semibold tabular-nums tracking-tight text-pro-text md:text-5xl">
+            <div className="font-condensed mt-3 text-5xl uppercase tabular-nums tracking-tight text-pro-text md:text-6xl">
               {usdc6(available)}
             </div>
             <div className="mt-2 text-sm text-pro-muted">
@@ -145,7 +145,7 @@ export default function DashboardPage() {
           <div className="mb-4 flex items-end justify-between gap-3">
             <div>
               <p className="pro-pill">Collateral</p>
-              <h2 className="text-lg font-semibold text-pro-text">Your positions</h2>
+              <h2 className="font-condensed text-2xl uppercase tracking-tight text-pro-text">Your positions</h2>
             </div>
             <span className="rounded-full border border-pro-border bg-pro-elevated px-3 py-1 text-xs text-pro-muted">
               3 assets
@@ -165,7 +165,7 @@ export default function DashboardPage() {
                   className="grid grid-cols-[1fr_auto_auto] items-center gap-4 p-4 transition hover:bg-pro-hover sm:grid-cols-[1fr_auto_auto_auto]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className="grid h-10 w-10 place-items-center rounded-lg bg-brand-gradient font-mono text-xs font-bold text-white">
+                    <div className="grid h-10 w-10 place-items-center rounded-full bg-hot/15 font-mono text-xs font-bold text-hot">
                       {r.mint.slice(0, 3)}
                     </div>
                     <div>
@@ -201,9 +201,9 @@ export default function DashboardPage() {
               ))}
             </div>
           </div>
-          <div className="pro-card border-accent/25 p-5">
+          <div className="pro-card p-5">
             <div className="flex items-center gap-2 text-sm font-semibold text-pro-text">
-              <Zap className="h-4 w-4 text-accent" />
+              <Zap className="h-4 w-4 text-hot" />
               Dividend loop
             </div>
             <p className="mt-2 text-sm text-pro-muted">

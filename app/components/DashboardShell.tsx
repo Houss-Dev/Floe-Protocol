@@ -17,6 +17,7 @@ import {
 import { FLOE_GITHUB_URL } from "../lib/brand";
 import { FloeBrandIcon } from "./FloeBrandIcon";
 import { WalletButton } from "./WalletButton";
+import { CollateralTape } from "./CollateralTape";
 
 function NavItem({
   href,
@@ -37,9 +38,9 @@ function NavItem({
     <Link
       href={href}
       onClick={onNavigate}
-      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+      className={`flex items-center gap-2.5 rounded-full px-3 py-2 text-sm transition-colors ${
         active
-          ? "bg-pro-elevated text-pro-text"
+          ? "bg-[#f4f0e5] text-[#17110b]"
           : "text-pro-muted hover:bg-pro-hover hover:text-pro-text"
       }`}
     >
@@ -54,9 +55,9 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
     <>
       <div className="border-b border-pro-border px-4 py-5">
         <Link href="/" onClick={onNavigate} className="flex items-center gap-2.5" title="Back to marketing home">
-          <FloeBrandIcon size={26} />
+          <FloeBrandIcon size={32} ink="cream" />
           <div>
-            <div className="text-sm font-semibold leading-tight">Floe Protocol</div>
+            <div className="text-sm font-semibold leading-tight text-pro-text">Floe Protocol</div>
             <div className="text-[10px] uppercase tracking-wider text-pro-faint">Pro · devnet</div>
           </div>
         </Link>
@@ -90,7 +91,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
               href={FLOE_GITHUB_URL}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-pro-muted transition hover:bg-pro-hover hover:text-pro-text"
+              className="flex items-center gap-2.5 rounded-full px-3 py-2 text-sm text-pro-muted transition hover:bg-pro-hover hover:text-pro-text"
             >
               <ExternalLink className="h-4 w-4 shrink-0 opacity-80" aria-hidden="true" />
               GitHub
@@ -103,7 +104,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
         <Link
           href="/"
           onClick={onNavigate}
-          className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-pro-muted transition hover:bg-pro-hover hover:text-pro-text"
+          className="flex items-center gap-2 rounded-full px-3 py-2 text-xs text-pro-muted transition hover:bg-pro-hover hover:text-pro-text"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
           Back to home
@@ -117,12 +118,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const path = usePathname();
 
-  // Close the drawer on route change (covers in-content links too, e.g. "Dividends →").
   useEffect(() => {
     setDrawerOpen(false);
   }, [path]);
 
-  // Lock body scroll while the mobile drawer is open.
   useEffect(() => {
     if (!drawerOpen) return;
     const prev = document.body.style.overflow;
@@ -133,63 +132,64 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   }, [drawerOpen]);
 
   return (
-    <div className="flex min-h-screen bg-pro-bg text-pro-text">
-      {/* Desktop sidebar */}
-      <aside className="hidden w-56 shrink-0 flex-col border-r border-pro-border bg-pro-panel md:flex">
-        <SidebarNav />
-      </aside>
+    <div className="min-h-screen bg-black p-2 text-pro-text md:p-3">
+      <div className="flex min-h-[calc(100svh-1rem)] overflow-hidden rounded-[28px] bg-pro-bg md:min-h-[calc(100svh-1.5rem)]">
+        <aside className="hidden w-56 shrink-0 flex-col border-r border-pro-border bg-pro-panel md:flex">
+          <SidebarNav />
+        </aside>
 
-      {/* Mobile drawer */}
-      {drawerOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setDrawerOpen(false)}
-            aria-hidden="true"
-          />
-          <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-pro-panel shadow-overlay">
-            <button
-              type="button"
+        {drawerOpen && (
+          <div className="fixed inset-0 z-50 md:hidden">
+            <div
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
               onClick={() => setDrawerOpen(false)}
-              aria-label="Close menu"
-              className="absolute right-3 top-4 flex h-8 w-8 items-center justify-center rounded-lg text-pro-muted transition hover:bg-pro-hover hover:text-pro-text"
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <SidebarNav onNavigate={() => setDrawerOpen(false)} />
-          </aside>
-        </div>
-      )}
+              aria-hidden="true"
+            />
+            <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-pro-panel shadow-overlay">
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(false)}
+                aria-label="Close menu"
+                className="absolute right-3 top-4 flex h-8 w-8 items-center justify-center rounded-full text-pro-muted transition hover:bg-pro-hover hover:text-pro-text"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <SidebarNav onNavigate={() => setDrawerOpen(false)} />
+            </aside>
+          </div>
+        )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between gap-3 border-b border-pro-border bg-pro-panel/80 px-4 backdrop-blur md:px-6">
-          <div className="flex items-center gap-2 md:hidden">
-            <button
-              type="button"
-              onClick={() => setDrawerOpen(true)}
-              aria-label="Open menu"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-pro-muted transition hover:bg-pro-hover hover:text-pro-text"
-            >
-              <Menu className="h-5 w-5" aria-hidden="true" />
-            </button>
-            <Link href="/" className="flex items-center gap-2" title="Back to marketing home">
-              <FloeBrandIcon size={24} />
-              <span className="text-sm font-semibold">Floe</span>
-            </Link>
-          </div>
-          <div className="hidden min-w-0 flex-1 items-center gap-3 md:flex">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-pro-muted transition hover:bg-pro-hover hover:text-pro-text"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-              Home
-            </Link>
-            <p className="truncate text-xs text-pro-faint">Credit line · tokenized stock collateral · Solana devnet</p>
-          </div>
-          <WalletButton />
-        </header>
-        <main className="flex-1 overflow-x-hidden p-4 md:p-6 lg:p-8">{children}</main>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-14 items-center justify-between gap-3 border-b border-pro-border bg-pro-panel/80 px-4 backdrop-blur md:px-6">
+            <div className="flex items-center gap-2 md:hidden">
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(true)}
+                aria-label="Open menu"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-pro-muted transition hover:bg-pro-hover hover:text-pro-text"
+              >
+                <Menu className="h-5 w-5" aria-hidden="true" />
+              </button>
+              <Link href="/" className="flex items-center gap-2" title="Back to marketing home">
+                <FloeBrandIcon size={28} ink="cream" />
+                <span className="text-sm font-semibold text-pro-text">Floe</span>
+              </Link>
+            </div>
+            <div className="hidden min-w-0 flex-1 items-center gap-3 md:flex">
+              <Link
+                href="/"
+                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs text-pro-muted transition hover:bg-pro-hover hover:text-pro-text"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                Home
+              </Link>
+              <p className="truncate text-xs text-pro-faint">Credit line · tokenized stock collateral · Solana devnet</p>
+            </div>
+            <WalletButton />
+          </header>
+          <CollateralTape />
+          <main className="flex-1 overflow-x-hidden p-4 md:p-6 lg:p-8">{children}</main>
+        </div>
       </div>
     </div>
   );

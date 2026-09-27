@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Anton&family=JetBrains+Mono:wght@500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -23,6 +23,17 @@ body {
   background-attachment: fixed;
 }
 
+/* Marketing site accent selection color (matches the "How it works" red) */
+::selection {
+  background-color: #ff4d1c;
+  color: #17110b;
+}
+
+@keyframes marquee-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
 @layer components {
   .ll-card {
     @apply rounded-xl border border-line bg-surface shadow-sm;
@@ -35,7 +46,66 @@ body {
   }
 
   .ll-pill {
-    @apply inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-faint;
+    @apply inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wider text-faint;
+  }
+
+  /* Landing type scale — hero stays largest; these are section + content only */
+  .ll-page {
+    @apply w-full px-6 sm:px-8 lg:px-12 xl:px-16;
+  }
+  .ll-section-title {
+    @apply text-left font-condensed text-6xl uppercase leading-[0.82] tracking-tight text-foreground sm:text-7xl md:text-8xl;
+  }
+  .ll-content-title {
+    @apply font-condensed text-3xl leading-tight tracking-tight text-foreground sm:text-4xl;
+  }
+  .ll-content-body {
+    @apply text-sm leading-relaxed text-muted;
+  }
+
+  /* Hero-ink band: cream type + lifted cards on #1a1a1a */
+  .ll-on-ink .ll-section-title,
+  .ll-on-ink .ll-content-title {
+    @apply text-[#f4f0e5];
+  }
+  .ll-on-ink .ll-content-body {
+    color: rgba(244, 240, 229, 0.6);
+  }
+  .ll-on-ink .ll-pill {
+    color: rgba(244, 240, 229, 0.42);
+  }
+  .ll-on-ink .border-line,
+  .ll-on-ink .divide-line {
+    border-color: rgba(244, 240, 229, 0.16);
+  }
+  .ll-on-ink .text-foreground {
+    color: #f4f0e5;
+  }
+  .ll-on-ink .text-foreground\/70 {
+    color: rgba(244, 240, 229, 0.7);
+  }
+  .ll-on-ink .text-faint {
+    color: rgba(244, 240, 229, 0.42);
+  }
+  .ll-on-ink .bg-surface3 {
+    background-color: rgba(244, 240, 229, 0.1);
+  }
+  .ll-on-ink .ll-ink-panel {
+    background: rgba(244, 240, 229, 0.045);
+    border-color: rgba(244, 240, 229, 0.16);
+  }
+  /* Stat tiles stay cream-on-dark band but type stays dark for contrast */
+  .ll-on-ink .ll-stat {
+    @apply border-[rgba(244,240,229,0.14)] bg-[#f4f0e5];
+  }
+  .ll-on-ink .ll-stat .text-foreground {
+    color: #17110b;
+  }
+  .ll-on-ink .ll-stat .text-muted {
+    color: rgba(23, 17, 11, 0.58);
+  }
+  .ll-on-ink .ll-stat .text-faint {
+    color: rgba(23, 17, 11, 0.42);
   }
 
   .ll-btn-primary {
@@ -90,18 +160,24 @@ body {
 
 @layer components {
   .pro-card {
-    @apply rounded-xl border border-pro-border bg-pro-panel;
+    @apply rounded-3xl border border-pro-border bg-pro-panel;
   }
   .pro-card-inset {
-    @apply rounded-lg border border-pro-border bg-pro-elevated;
+    @apply rounded-2xl border border-pro-border bg-pro-elevated;
   }
   .pro-pill {
     @apply text-[10px] font-semibold uppercase tracking-wider text-pro-faint;
   }
   .pro-btn-primary {
-    @apply inline-flex items-center justify-center rounded-lg bg-accent2 px-4 py-2 text-sm font-semibold text-white hover:opacity-90;
+    @apply inline-flex items-center justify-center rounded-full bg-hot px-4 py-2 text-sm font-semibold text-[#f4f0e5] hover:opacity-90;
   }
   .pro-btn-secondary {
-    @apply inline-flex items-center justify-center rounded-lg border border-pro-border bg-pro-elevated px-4 py-2 text-sm text-pro-text hover:bg-pro-hover;
+    @apply inline-flex items-center justify-center rounded-full border border-pro-border bg-pro-elevated px-4 py-2 text-sm text-pro-text hover:bg-pro-hover;
+  }
+  .pro-card .btn {
+    @apply rounded-full border-pro-border bg-pro-elevated text-pro-text hover:bg-pro-hover;
+  }
+  .pro-card .inp {
+    @apply border-pro-border bg-pro-bg text-pro-text focus:border-hot;
   }
 }

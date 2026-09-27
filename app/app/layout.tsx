@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   applicationName: "Floe Protocol",
   description:
     "Floe Protocol: a credit line backed by tokenized stocks. SPYx and pre-IPO rounds as collateral, dividends as repayment.",
-  icons: { icon: [{ url: "/floe-logo.png", type: "image/png" }] },
+  icons: { icon: [{ url: "/floe-logo-wave.svg", type: "image/svg+xml" }] },
 };
 
 

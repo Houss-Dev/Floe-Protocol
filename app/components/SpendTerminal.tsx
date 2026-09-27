@@ -8,11 +8,11 @@ export function SpendTerminal({
   onAuthorize: (amount: number, merchant: string) => Promise<{ ok: boolean; tx?: string; err?: string }>;
   theme?: "light" | "pro";
 }) {
-  const wrap = theme === "pro" ? "pro-card border-accent2/25 p-5" : "ll-card border-accent2/25 bg-tint-purple p-5";
+  const wrap = theme === "pro" ? "pro-card p-5" : "ll-card border-hot/25 bg-tint-amber p-5";
   const input =
     theme === "pro"
-      ? "flex-1 rounded-lg border border-pro-border bg-pro-elevated px-4 py-3 text-lg text-pro-text outline-none focus:border-accent2/50"
-      : "flex-1 rounded-xl border border-line bg-surface2 px-4 py-3 text-lg text-foreground outline-none focus:border-accent2/50";
+      ? "flex-1 rounded-2xl border border-pro-border bg-pro-elevated px-4 py-3 text-lg text-pro-text outline-none focus:border-hot/50"
+      : "flex-1 rounded-xl border border-line bg-surface2 px-4 py-3 text-lg text-foreground outline-none focus:border-hot/50";
   const label = theme === "pro" ? "text-pro-muted" : "text-muted";
   const [amount, setAmount] = useState("200");
   const [merchant, setMerchant] = useState("Whole Foods — groceries");
@@ -47,7 +47,7 @@ export function SpendTerminal({
           <button
             onClick={go}
             disabled={busy || !amount}
-            className="rounded-xl bg-brand-gradient px-6 py-3 font-semibold text-white disabled:opacity-50 hover:opacity-90"
+            className="rounded-full bg-hot px-6 py-3 font-semibold text-[#f4f0e5] disabled:opacity-50 hover:opacity-90"
           >
             {busy ? "Authorising…" : "Authorise"}
           </button>

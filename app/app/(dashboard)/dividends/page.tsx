@@ -57,7 +57,7 @@ export default function DividendsPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="pro-pill">Explore · Dividends</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-pro-text md:text-3xl">Dividend routing</h1>
+          <h1 className="font-condensed mt-1 text-4xl uppercase tracking-tight text-pro-text md:text-5xl">Dividend routing</h1>
           <p className="mt-2 max-w-2xl text-sm text-pro-muted">
             Multiplier bumps are the only on-chain trace — trim, swap to USDC, route per payout mode.
           </p>
@@ -68,7 +68,7 @@ export default function DividendsPage() {
               key={m}
               onClick={() => setMode(m)}
               className={`rounded-full px-3 py-1.5 transition ${
-                mode === m ? "bg-accent2 text-white" : "text-pro-muted hover:bg-pro-hover hover:text-pro-text"
+                mode === m ? "bg-hot text-[#f4f0e5]" : "text-pro-muted hover:bg-pro-hover hover:text-pro-text"
               }`}
             >
               {m === "RepayDebt" ? "Repay debt" : m === "Payout" ? "Pay out" : "Reinvest (soon)"}
@@ -85,7 +85,7 @@ export default function DividendsPage() {
               <button
                 onClick={simulateBump}
                 disabled={simulating}
-                className="rounded-lg bg-accent/15 px-3 py-1.5 text-xs font-semibold text-accent disabled:opacity-50"
+                className="rounded-full bg-hot/15 px-3 py-1.5 text-xs font-semibold text-hot disabled:opacity-50"
               >
                 {simulating ? "Bumping…" : "Simulate bump → harvest"}
               </button>
@@ -93,7 +93,7 @@ export default function DividendsPage() {
             <div className="divide-y divide-pro-border">
               {history.map((r, i) => (
                 <div key={i} className="flex items-center gap-4 p-4">
-                  <div className="grid h-10 w-10 place-items-center rounded-lg bg-brand-gradient font-mono text-xs font-bold text-white">
+                  <div className="grid h-10 w-10 place-items-center rounded-full bg-hot/15 font-mono text-xs font-bold text-hot">
                     {r.ticker.slice(0, 3)}
                   </div>
                   <div className="min-w-0 flex-1">

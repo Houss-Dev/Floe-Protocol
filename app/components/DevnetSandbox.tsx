@@ -395,11 +395,11 @@ export function DevnetSandbox() {
         TOKEN_PROGRAM,
         DEVNET_MINTS.usdcToken as Address
       );
+      // SPL Transfer (3): source, destination, owner — not TransferChecked (no mint meta).
       const transferIx: Instruction = {
         programAddress: TOKEN_PROGRAM,
         accounts: [
           { address: from, role: AccountRole.WRITABLE },
-          { address: DEVNET_MINTS.usdcMint as Address, role: AccountRole.READONLY },
           { address: (await pdas)!.reserve, role: AccountRole.WRITABLE },
           { address: wpk!, role: AccountRole.WRITABLE_SIGNER },
         ],
@@ -526,34 +526,34 @@ export function DevnetSandbox() {
       </div>
 
       {!connected && (
-        <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+        <div className="rounded-2xl border border-hot/30 bg-hot/10 px-4 py-3 text-sm text-pro-muted">
           Connect a wallet (Phantom or Solflare) to use the sandbox.
         </div>
       )}
 
       {legacy.length > 0 && (
-        <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+        <div className="rounded-2xl border border-hot/30 bg-hot/10 px-4 py-3 text-sm text-pro-muted">
           Legacy {legacy.join(", ")} account detected — written by an older program build and unreadable by the
           current codec. The program cannot act on it; use a fresh wallet for the demo.
         </div>
       )}
 
       <div className="grid md:grid-cols-4 gap-3 text-sm">
-        <div className="rounded-xl bg-foreground p-3 text-paper">
-          <div className="text-[11px] uppercase tracking-wider text-paper/60">Debt</div>
-          <div className="text-xl font-semibold mt-1">${debtUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        <div className="rounded-2xl bg-pro-elevated p-3 text-pro-text">
+          <div className="text-[11px] uppercase tracking-wider text-pro-faint">Debt</div>
+          <div className="font-condensed mt-1 text-2xl uppercase">${debtUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
         </div>
-        <div className="rounded-xl bg-foreground p-3 text-paper">
-          <div className="text-[11px] uppercase tracking-wider text-paper/60">Collateral</div>
-          <div className="text-xl font-semibold mt-1">${collUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        <div className="rounded-2xl bg-pro-elevated p-3 text-pro-text">
+          <div className="text-[11px] uppercase tracking-wider text-pro-faint">Collateral</div>
+          <div className="font-condensed mt-1 text-2xl uppercase">${collUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
         </div>
-        <div className="rounded-xl bg-foreground p-3 text-paper">
-          <div className="text-[11px] uppercase tracking-wider text-paper/60">Limit</div>
-          <div className="text-xl font-semibold mt-1">${limitUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        <div className="rounded-2xl bg-pro-elevated p-3 text-pro-text">
+          <div className="text-[11px] uppercase tracking-wider text-pro-faint">Limit</div>
+          <div className="font-condensed mt-1 text-2xl uppercase">${limitUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
         </div>
-        <div className="rounded-xl border border-accent/30 bg-tint-green p-3">
-          <div className="text-[11px] uppercase tracking-wider text-accent">Available</div>
-          <div className="text-xl font-semibold mt-1">${availUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        <div className="rounded-2xl border border-hot/30 bg-hot/10 p-3">
+          <div className="text-[11px] uppercase tracking-wider text-hot">Available</div>
+          <div className="font-condensed mt-1 text-2xl uppercase text-pro-text">${availUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
         </div>
       </div>
 

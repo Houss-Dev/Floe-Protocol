@@ -31,7 +31,7 @@ export default function SpendPage() {
       <div className="space-y-4 md:col-span-3">
         <div>
           <p className="pro-pill">Explore · Spend</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-pro-text">Draw at point of sale</h1>
+          <h1 className="font-condensed mt-1 text-4xl uppercase tracking-tight text-pro-text">Draw at point of sale</h1>
           <p className="mt-2 text-sm text-pro-muted">
             Keeper-signed in prod (~1.5s). No standing debt, no idle interest.
           </p>

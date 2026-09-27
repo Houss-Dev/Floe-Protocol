@@ -1,26 +1,45 @@
-import Image from "next/image";
-
 type Props = {
   size?: number;
   className?: string;
+  /** Cream/orange on dark UI; black/orange on light backgrounds. */
+  ink?: "cream" | "black";
+  /** @deprecated Bracket lockup removed — kept for call-site compat; ignored. */
+  compact?: boolean;
 };
 
-/** Official Floe mark (violet on black). */
-export function FloeBrandIcon({ size = 32, className = "" }: Props) {
+const cream = "#f4f0e5";
+const black = "#17110b";
+const hot = "#ff4d1c";
+
+/** Twin-wave Floe mark — cream front, orange back (brand palette). */
+export function FloeBrandIcon({ size = 32, className = "", ink = "cream" }: Props) {
+  const front = ink === "cream" ? cream : black;
+
   return (
-    <span
-      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#0b0b0f] ${className}`}
-      style={{ width: size, height: size }}
+    <svg
+      viewBox="0 0 100 100"
+      width={size}
+      height={size}
+      className={className}
+      role="img"
+      aria-label="Floe"
     >
-      <Image
-        src="/floe-logo.png"
-        alt=""
-        width={size}
-        height={size}
-        className="h-full w-full object-contain"
-        priority
-        aria-hidden
+      <path
+        d="M14 58 C28 44 38 44 50 58 C62 72 72 72 86 58"
+        stroke={hot}
+        strokeWidth="11"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
       />
-    </span>
+      <path
+        d="M10 44 C24 30 34 30 46 44 C58 58 68 58 82 44"
+        stroke={front}
+        strokeWidth="11"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </svg>
   );
 }
