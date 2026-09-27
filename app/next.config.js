@@ -46,7 +46,11 @@ const nextConfig = {
 
   async redirects() {
 
-    return [{ source: "/line", destination: "/dashboard", permanent: false }];
+    return [
+      { source: "/line", destination: "/dashboard", permanent: false },
+      { source: "/favicon.ico", destination: "/favicon.svg", permanent: false },
+      { source: "/floe-logo.png", destination: "/favicon.svg", permanent: true },
+    ];
 
   },
 
