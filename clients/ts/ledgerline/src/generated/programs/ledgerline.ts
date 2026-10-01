@@ -38,6 +38,7 @@ import {
   getConfigCodec,
   getCreditLineCodec,
   getDividendEventCodec,
+  getSpendPolicyCodec,
   type Asset,
   type AssetArgs,
   type Config,
@@ -46,6 +47,8 @@ import {
   type CreditLineArgs,
   type DividendEvent,
   type DividendEventArgs,
+  type SpendPolicy,
+  type SpendPolicyArgs,
 } from "../accounts";
 import {
   getAddAssetInstructionAsync,
@@ -62,8 +65,11 @@ import {
   getSetHolidayInstructionAsync,
   getSetOperatingStateInstructionAsync,
   getSetPayoutModeInstruction,
+  getSetPermissivePricingInstructionAsync,
   getSetPythReceiverInstructionAsync,
+  getSetSpendPolicyInstructionAsync,
   getSettleDividendInstructionAsync,
+  getSweepTreasuryInstructionAsync,
   getWithdrawInstructionAsync,
   parseAddAssetInstruction,
   parseCloseLineInstruction,
@@ -79,8 +85,11 @@ import {
   parseSetHolidayInstruction,
   parseSetOperatingStateInstruction,
   parseSetPayoutModeInstruction,
+  parseSetPermissivePricingInstruction,
   parseSetPythReceiverInstruction,
+  parseSetSpendPolicyInstruction,
   parseSettleDividendInstruction,
+  parseSweepTreasuryInstruction,
   parseWithdrawInstruction,
   type AddAssetAsyncInput,
   type CloseLineAsyncInput,
@@ -104,8 +113,11 @@ import {
   type ParsedSetHolidayInstruction,
   type ParsedSetOperatingStateInstruction,
   type ParsedSetPayoutModeInstruction,
+  type ParsedSetPermissivePricingInstruction,
   type ParsedSetPythReceiverInstruction,
+  type ParsedSetSpendPolicyInstruction,
   type ParsedSettleDividendInstruction,
+  type ParsedSweepTreasuryInstruction,
   type ParsedWithdrawInstruction,
   type RepayAsyncInput,
   type ResizeLineAsyncInput,
@@ -113,8 +125,11 @@ import {
   type SetHolidayAsyncInput,
   type SetOperatingStateAsyncInput,
   type SetPayoutModeInput,
+  type SetPermissivePricingAsyncInput,
   type SetPythReceiverAsyncInput,
+  type SetSpendPolicyAsyncInput,
   type SettleDividendAsyncInput,
+  type SweepTreasuryAsyncInput,
   type WithdrawAsyncInput,
 } from "../instructions";
 import {
@@ -123,6 +138,7 @@ import {
   findDividendEventPda,
   findLinePda,
   findReserveAtaPda,
+  findSpendPolicyPda,
   findTreasuryPda,
   findVaultPda,
 } from "../pdas";
@@ -135,6 +151,7 @@ export enum LedgerlineAccount {
   Config,
   CreditLine,
   DividendEvent,
+  SpendPolicy,
 }
 
 export function identifyLedgerlineAccount(
@@ -184,6 +201,17 @@ export function identifyLedgerlineAccount(
     )
   ) {
     return LedgerlineAccount.DividendEvent;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([139, 90, 209, 31, 205, 15, 68, 243]),
+      ),
+      0,
+    )
+  ) {
+    return LedgerlineAccount.SpendPolicy;
   }
   throw new SolanaError(
     SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_ACCOUNT,
@@ -278,8 +306,11 @@ export enum LedgerlineInstruction {
   SetHoliday,
   SetOperatingState,
   SetPayoutMode,
+  SetPermissivePricing,
   SetPythReceiver,
+  SetSpendPolicy,
   SettleDividend,
+  SweepTreasury,
   Withdraw,
 }
 
@@ -445,6 +476,17 @@ export function identifyLedgerlineInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([164, 146, 53, 158, 238, 240, 220, 80]),
+      ),
+      0,
+    )
+  ) {
+    return LedgerlineInstruction.SetPermissivePricing;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([217, 76, 144, 80, 35, 157, 142, 88]),
       ),
       0,
@@ -456,12 +498,34 @@ export function identifyLedgerlineInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([26, 146, 213, 49, 37, 211, 246, 101]),
+      ),
+      0,
+    )
+  ) {
+    return LedgerlineInstruction.SetSpendPolicy;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([221, 153, 84, 154, 213, 67, 27, 63]),
       ),
       0,
     )
   ) {
     return LedgerlineInstruction.SettleDividend;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([125, 203, 4, 4, 87, 34, 238, 169]),
+      ),
+      0,
+    )
+  ) {
+    return LedgerlineInstruction.SweepTreasury;
   }
   if (
     containsBytes(
@@ -526,11 +590,20 @@ export type ParsedLedgerlineInstruction<
       instructionType: LedgerlineInstruction.SetPayoutMode;
     } & ParsedSetPayoutModeInstruction<TProgram>)
   | ({
+      instructionType: LedgerlineInstruction.SetPermissivePricing;
+    } & ParsedSetPermissivePricingInstruction<TProgram>)
+  | ({
       instructionType: LedgerlineInstruction.SetPythReceiver;
     } & ParsedSetPythReceiverInstruction<TProgram>)
   | ({
+      instructionType: LedgerlineInstruction.SetSpendPolicy;
+    } & ParsedSetSpendPolicyInstruction<TProgram>)
+  | ({
       instructionType: LedgerlineInstruction.SettleDividend;
     } & ParsedSettleDividendInstruction<TProgram>)
+  | ({
+      instructionType: LedgerlineInstruction.SweepTreasury;
+    } & ParsedSweepTreasuryInstruction<TProgram>)
   | ({
       instructionType: LedgerlineInstruction.Withdraw;
     } & ParsedWithdrawInstruction<TProgram>);
@@ -638,6 +711,13 @@ export function parseLedgerlineInstruction<TProgram extends string>(
         ...parseSetPayoutModeInstruction(instruction),
       };
     }
+    case LedgerlineInstruction.SetPermissivePricing: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: LedgerlineInstruction.SetPermissivePricing,
+        ...parseSetPermissivePricingInstruction(instruction),
+      };
+    }
     case LedgerlineInstruction.SetPythReceiver: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -645,11 +725,25 @@ export function parseLedgerlineInstruction<TProgram extends string>(
         ...parseSetPythReceiverInstruction(instruction),
       };
     }
+    case LedgerlineInstruction.SetSpendPolicy: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: LedgerlineInstruction.SetSpendPolicy,
+        ...parseSetSpendPolicyInstruction(instruction),
+      };
+    }
     case LedgerlineInstruction.SettleDividend: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: LedgerlineInstruction.SettleDividend,
         ...parseSettleDividendInstruction(instruction),
+      };
+    }
+    case LedgerlineInstruction.SweepTreasury: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: LedgerlineInstruction.SweepTreasury,
+        ...parseSweepTreasuryInstruction(instruction),
       };
     }
     case LedgerlineInstruction.Withdraw: {
@@ -688,6 +782,8 @@ export type LedgerlinePluginAccounts = {
     SelfFetchFunctions<CreditLineArgs, CreditLine>;
   dividendEvent: ReturnType<typeof getDividendEventCodec> &
     SelfFetchFunctions<DividendEventArgs, DividendEvent>;
+  spendPolicy: ReturnType<typeof getSpendPolicyCodec> &
+    SelfFetchFunctions<SpendPolicyArgs, SpendPolicy>;
 };
 
 export type LedgerlinePluginInstructions = {
@@ -744,13 +840,25 @@ export type LedgerlinePluginInstructions = {
     input: SetPayoutModeInput,
   ) => ReturnType<typeof getSetPayoutModeInstruction> &
     SelfPlanAndSendFunctions;
+  setPermissivePricing: (
+    input: SetPermissivePricingAsyncInput,
+  ) => ReturnType<typeof getSetPermissivePricingInstructionAsync> &
+    SelfPlanAndSendFunctions;
   setPythReceiver: (
     input: SetPythReceiverAsyncInput,
   ) => ReturnType<typeof getSetPythReceiverInstructionAsync> &
     SelfPlanAndSendFunctions;
+  setSpendPolicy: (
+    input: SetSpendPolicyAsyncInput,
+  ) => ReturnType<typeof getSetSpendPolicyInstructionAsync> &
+    SelfPlanAndSendFunctions;
   settleDividend: (
     input: SettleDividendAsyncInput,
   ) => ReturnType<typeof getSettleDividendInstructionAsync> &
+    SelfPlanAndSendFunctions;
+  sweepTreasury: (
+    input: SweepTreasuryAsyncInput,
+  ) => ReturnType<typeof getSweepTreasuryInstructionAsync> &
     SelfPlanAndSendFunctions;
   withdraw: (
     input: WithdrawAsyncInput,
@@ -762,6 +870,7 @@ export type LedgerlinePluginPdas = {
   config: typeof findConfigPda;
   asset: typeof findAssetPda;
   vault: typeof findVaultPda;
+  spendPolicy: typeof findSpendPolicyPda;
   treasury: typeof findTreasuryPda;
   dividendEvent: typeof findDividendEventPda;
   reserveAta: typeof findReserveAtaPda;
@@ -785,6 +894,7 @@ export function ledgerlineProgram() {
           config: addSelfFetchFunctions(client, getConfigCodec()),
           creditLine: addSelfFetchFunctions(client, getCreditLineCodec()),
           dividendEvent: addSelfFetchFunctions(client, getDividendEventCodec()),
+          spendPolicy: addSelfFetchFunctions(client, getSpendPolicyCodec()),
         },
         instructions: {
           addAsset: (input) =>
@@ -854,15 +964,30 @@ export function ledgerlineProgram() {
               client,
               getSetPayoutModeInstruction(input),
             ),
+          setPermissivePricing: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getSetPermissivePricingInstructionAsync(input),
+            ),
           setPythReceiver: (input) =>
             addSelfPlanAndSendFunctions(
               client,
               getSetPythReceiverInstructionAsync(input),
             ),
+          setSpendPolicy: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getSetSpendPolicyInstructionAsync(input),
+            ),
           settleDividend: (input) =>
             addSelfPlanAndSendFunctions(
               client,
               getSettleDividendInstructionAsync(input),
+            ),
+          sweepTreasury: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getSweepTreasuryInstructionAsync(input),
             ),
           withdraw: (input) =>
             addSelfPlanAndSendFunctions(
@@ -874,6 +999,7 @@ export function ledgerlineProgram() {
           config: findConfigPda,
           asset: findAssetPda,
           vault: findVaultPda,
+          spendPolicy: findSpendPolicyPda,
           treasury: findTreasuryPda,
           dividendEvent: findDividendEventPda,
           reserveAta: findReserveAtaPda,

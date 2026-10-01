@@ -1,7 +1,5 @@
-# Keeper v1 cron. The plan's "API only" cadence: every 15 minutes, one tick.
-# NOTE for judges: the hackathon repo push was blocked (deleted remote / PAT
-# limits), so this workflow is shipped as the deployment path we tested
-# locally (scripts/demo.sh runs the identical command once).
+# Keeper tick every 15 minutes. The keypair and the keeper config JSON both
+# come from Actions secrets. Without them the job still runs the offline selftest.
 name: keeper-tick
 on:
   schedule: [{ cron: "*/15 * * * *" }]
@@ -25,10 +23,13 @@ jobs:
       - name: one config keeper tick (devnet)
         env:
           KEEPER_SECRET: ${{ secrets.KEEPER_KEYPAIR_JSON }}
+          KEEPER_CONFIG_JSON: ${{ secrets.KEEPER_CONFIG_JSON }}
         run: |
-          if [ -z "$KEEPER_SECRET" ]; then
-            echo "KEEPER_SECRET is not set — skipping devnet tick"
+          if [ -z "$KEEPER_SECRET" ] || [ -z "$KEEPER_CONFIG_JSON" ]; then
+            echo "KEEPER_SECRET or KEEPER_CONFIG_JSON is not set — skipping devnet tick"
             exit 0
           fi
-          mkdir -p .anchor && echo "$KEEPER_SECRET" > .anchor/demo-keypair.json
+          mkdir -p .anchor
+          echo "$KEEPER_SECRET" > .anchor/demo-keypair.json
+          echo "$KEEPER_CONFIG_JSON" > keeper/config.devnet.json
           cd keeper && npx tsx src/cli.ts --config config.devnet.json --loop 1 5

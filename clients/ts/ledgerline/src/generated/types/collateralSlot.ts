@@ -14,16 +14,24 @@ import {
   getBooleanEncoder,
   getStructDecoder,
   getStructEncoder,
+  getU16Decoder,
+  getU16Encoder,
   getU64Decoder,
   getU64Encoder,
+  getU8Decoder,
+  getU8Encoder,
   type Address,
   type FixedSizeCodec,
   type FixedSizeDecoder,
   type FixedSizeEncoder,
 } from "@solana/kit";
 import {
+  getFixedDecoder,
+  getFixedEncoder,
   getMarketKindDecoder,
   getMarketKindEncoder,
+  type Fixed,
+  type FixedArgs,
   type MarketKind,
   type MarketKindArgs,
 } from ".";
@@ -52,6 +60,15 @@ export type CollateralSlot = {
    */
   marketKind: MarketKind;
   inUse: boolean;
+  /**
+   * Mint decimals copied at deposit. Withdraw and liquidation revalue
+   * without reloading every asset account.
+   */
+  decimals: number;
+  /** USD per whole share at the last `resize_line`, 1e9 fixed point. */
+  lastPrice: Fixed;
+  /** Effective LTV (bps) applied to this slot at the last sizing. */
+  lastLtvBps: number;
 };
 
 export type CollateralSlotArgs = {
@@ -74,6 +91,15 @@ export type CollateralSlotArgs = {
    */
   marketKind: MarketKindArgs;
   inUse: boolean;
+  /**
+   * Mint decimals copied at deposit. Withdraw and liquidation revalue
+   * without reloading every asset account.
+   */
+  decimals: number;
+  /** USD per whole share at the last `resize_line`, 1e9 fixed point. */
+  lastPrice: FixedArgs;
+  /** Effective LTV (bps) applied to this slot at the last sizing. */
+  lastLtvBps: number;
 };
 
 export function getCollateralSlotEncoder(): FixedSizeEncoder<CollateralSlotArgs> {
@@ -84,6 +110,9 @@ export function getCollateralSlotEncoder(): FixedSizeEncoder<CollateralSlotArgs>
     ["multiplierBits", getU64Encoder()],
     ["marketKind", getMarketKindEncoder()],
     ["inUse", getBooleanEncoder()],
+    ["decimals", getU8Encoder()],
+    ["lastPrice", getFixedEncoder()],
+    ["lastLtvBps", getU16Encoder()],
   ]);
 }
 
@@ -95,6 +124,9 @@ export function getCollateralSlotDecoder(): FixedSizeDecoder<CollateralSlot> {
     ["multiplierBits", getU64Decoder()],
     ["marketKind", getMarketKindDecoder()],
     ["inUse", getBooleanDecoder()],
+    ["decimals", getU8Decoder()],
+    ["lastPrice", getFixedDecoder()],
+    ["lastLtvBps", getU16Decoder()],
   ]);
 }
 

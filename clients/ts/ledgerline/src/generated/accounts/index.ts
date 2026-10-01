@@ -10,3 +10,4 @@ export * from "./asset";
 export * from "./config";
 export * from "./creditLine";
 export * from "./dividendEvent";
+export * from "./spendPolicy";

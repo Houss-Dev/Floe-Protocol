@@ -96,10 +96,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   // the reserve *is* the PDA token account (init constraint seeds=[reserve]),
   // not an ATA under it — mirrors the integration suite exactly.
   const reserveUsdcAta = reservePda;
+  const upgradeable = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
+  const [programData] = PublicKey.findProgramAddressSync([program.programId.toBuffer()], upgradeable);
   await program.methods.initConfig(admin, 25, 50, 1000)
-    .accounts({ config: configPda, reserveAta: reserveUsdcAta, usdcMint: usdcMint.publicKey, admin, tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId, rent: SYSVAR_RENT_PUBKEY })
+    .accounts({ config: configPda, reserveAta: reserveUsdcAta, usdcMint: usdcMint.publicKey, programData, admin, tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId, rent: SYSVAR_RENT_PUBKEY })
     .rpc();
-  ok("config + USDC reserve");
+  await program.methods.setPermissivePricing(true).accounts({ config: configPda, admin }).rpc();
+  ok("config + USDC reserve (permissive marks, no Pyth receiver)");
 
   const borrower = Keypair.generate();
   await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(borrower.publicKey, 2_000_000_000));
@@ -170,10 +173,15 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const session = Object.keys(sized.lastSession)[0];
   ok(`collateral $${sized.collateralUsdc.toNumber() / 1e6}, credit $${sized.creditLimitUsdc.toNumber() / 1e6}, session=${session} (pre-IPO half pinned to its closed tier either way)`);
 
-  step("draw: 100 USDC against the public collateral");
+  step("owner approves the keeper as a capped delegate, then the keeper draws 100 USDC");
+  const spendPda = pda([SEED("spend"), linePda.toBuffer()]);
+  await program.methods.setSpendPolicy(admin, new BN("1000000000000"), new BN(86_400), bUsdc, [])
+    .accounts({ config: configPda, line: linePda, spendPolicy: spendPda, owner: borrower.publicKey, systemProgram: SystemProgram.programId })
+    .signers([borrower])
+    .rpc();
   await program.methods.draw(new BN(100_000_000)).accounts({
     config: configPda, line: linePda, reserveAta: reserveUsdcAta, usdcMint: usdcMint.publicKey,
-    recipient: bUsdc, keeper: admin, tokenProgram: TOKEN_PROGRAM_ID,
+    recipient: bUsdc, authority: admin, spendPolicy: spendPda, tokenProgram: TOKEN_PROGRAM_ID,
   }).rpc();
   const afterDraw = await program.account.creditLine.fetch(linePda);
   ok(`debt $${afterDraw.usdcDebt.toNumber() / 1e6} (incl. 25bps fee); borrower USDC: ${Number((await getAccount(provider.connection, bUsdc, undefined, TOKEN_PROGRAM_ID)).amount) / 1e6}`);
@@ -232,7 +240,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   await sleep(125_000);
   await program.methods.draw(new BN(100_000)).accounts({
     config: configPda, line: linePda, reserveAta: reserveUsdcAta, usdcMint: usdcMint.publicKey,
-    recipient: bUsdc, keeper: admin, tokenProgram: TOKEN_PROGRAM_ID,
+    recipient: bUsdc, authority: admin, spendPolicy: spendPda, tokenProgram: TOKEN_PROGRAM_ID,
   }).rpc().catch((e: any) => refused(e));
 
   step("re-size unlocks the draw again (fresh mark, same price)");
@@ -242,7 +250,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     .rpc();
   await program.methods.draw(new BN(100_000)).accounts({
     config: configPda, line: linePda, reserveAta: reserveUsdcAta, usdcMint: usdcMint.publicKey,
-    recipient: bUsdc, keeper: admin, tokenProgram: TOKEN_PROGRAM_ID,
+    recipient: bUsdc, authority: admin, spendPolicy: spendPda, tokenProgram: TOKEN_PROGRAM_ID,
   }).rpc();
   ok("draw of $0.10 succeeded within seconds of a fresh sizing — the window is a freshness rule, not a rate limit");
 

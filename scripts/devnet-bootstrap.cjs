@@ -106,18 +106,26 @@ async function main() {
     console.log("config already exists — skipping init_config");
   } catch {
     console.log("init_config…");
+    const upgradeable = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
+    const [programData] = PublicKey.findProgramAddressSync([PID.toBuffer()], upgradeable);
     await program.methods
       .initConfig(admin.publicKey, 25, 50, 1000)
       .accounts({
         config,
         reserveAta: reserve,
         usdcMint,
+        programData,
         admin: admin.publicKey,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
         rent: SYSVAR_RENT_PUBKEY,
       })
       .rpc();
+    await program.methods
+      .setPermissivePricing(true)
+      .accounts({ config, admin: admin.publicKey })
+      .rpc();
+    console.log("permissive pricing enabled (devnet sandbox, no Pyth receiver)");
   }
 
   const assetInfo = await connection.getAccountInfo(asset);

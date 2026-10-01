@@ -11,5 +11,6 @@ export * from "./config";
 export * from "./dividendEvent";
 export * from "./line";
 export * from "./reserveAta";
+export * from "./spendPolicy";
 export * from "./treasury";
 export * from "./vault";

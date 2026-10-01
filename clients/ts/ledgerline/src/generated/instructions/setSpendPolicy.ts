@@ -10,19 +10,27 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressDecoder,
+  getAddressEncoder,
+  getArrayDecoder,
+  getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getI64Decoder,
+  getI64Encoder,
   getStructDecoder,
   getStructEncoder,
+  getU64Decoder,
+  getU64Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
   type AccountMeta,
   type AccountSignerMeta,
   type Address,
-  type FixedSizeCodec,
-  type FixedSizeDecoder,
-  type FixedSizeEncoder,
+  type Codec,
+  type Decoder,
+  type Encoder,
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
@@ -33,30 +41,33 @@ import {
 } from "@solana/kit";
 import {
   getAccountMetaFactory,
+  getAddressFromResolvedInstructionAccount,
   type InstructionAccountInput,
   type InstructionAccountInputAddress,
   type InstructionSignerInput,
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from "@solana/program-client-core";
-import { findConfigPda } from "../pdas";
+import { findConfigPda, findLinePda, findSpendPolicyPda } from "../pdas";
 import { LEDGERLINE_PROGRAM_ADDRESS } from "../programs";
 
-export const CLOSE_LINE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
-  190, 199, 74, 153, 43, 6, 153, 125,
-]);
+export const SET_SPEND_POLICY_DISCRIMINATOR: ReadonlyUint8Array =
+  new Uint8Array([26, 146, 213, 49, 37, 211, 246, 101]);
 
-export function getCloseLineDiscriminatorBytes(): ReadonlyUint8Array {
-  return fixEncoderSize(getBytesEncoder(), 8).encode(CLOSE_LINE_DISCRIMINATOR);
+export function getSetSpendPolicyDiscriminatorBytes(): ReadonlyUint8Array {
+  return fixEncoderSize(getBytesEncoder(), 8).encode(
+    SET_SPEND_POLICY_DISCRIMINATOR,
+  );
 }
 
-export type CloseLineInstruction<
+export type SetSpendPolicyInstruction<
   TProgram extends string = typeof LEDGERLINE_PROGRAM_ADDRESS,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountLine extends string | AccountMeta<string> = string,
+  TAccountSpendPolicy extends string | AccountMeta<string> = string,
   TAccountOwner extends string | AccountMeta<string> = string,
-  TAccountTokenProgram extends string | AccountMeta<string> =
-    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  TAccountSystemProgram extends string | AccountMeta<string> =
+    "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -66,75 +77,112 @@ export type CloseLineInstruction<
         ? ReadonlyAccount<TAccountConfig>
         : TAccountConfig,
       TAccountLine extends string
-        ? WritableAccount<TAccountLine>
+        ? ReadonlyAccount<TAccountLine>
         : TAccountLine,
+      TAccountSpendPolicy extends string
+        ? WritableAccount<TAccountSpendPolicy>
+        : TAccountSpendPolicy,
       TAccountOwner extends string
         ? WritableSignerAccount<TAccountOwner> &
             AccountSignerMeta<TAccountOwner>
         : TAccountOwner,
-      TAccountTokenProgram extends string
-        ? ReadonlyAccount<TAccountTokenProgram>
-        : TAccountTokenProgram,
+      TAccountSystemProgram extends string
+        ? ReadonlyAccount<TAccountSystemProgram>
+        : TAccountSystemProgram,
       ...TRemainingAccounts,
     ]
   >;
 
-export type CloseLineInstructionData = { discriminator: ReadonlyUint8Array };
+export type SetSpendPolicyInstructionData = {
+  discriminator: ReadonlyUint8Array;
+  delegate: Address;
+  periodCapUsdc: bigint;
+  periodSecs: bigint;
+  allowedRecipient: Address;
+  merchants: Array<Address>;
+};
 
-export type CloseLineInstructionDataArgs = {};
+export type SetSpendPolicyInstructionDataArgs = {
+  delegate: Address;
+  periodCapUsdc: number | bigint;
+  periodSecs: number | bigint;
+  allowedRecipient: Address;
+  merchants: Array<Address>;
+};
 
-export function getCloseLineInstructionDataEncoder(): FixedSizeEncoder<CloseLineInstructionDataArgs> {
+export function getSetSpendPolicyInstructionDataEncoder(): Encoder<SetSpendPolicyInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
-    (value) => ({ ...value, discriminator: CLOSE_LINE_DISCRIMINATOR }),
+    getStructEncoder([
+      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["delegate", getAddressEncoder()],
+      ["periodCapUsdc", getU64Encoder()],
+      ["periodSecs", getI64Encoder()],
+      ["allowedRecipient", getAddressEncoder()],
+      ["merchants", getArrayEncoder(getAddressEncoder())],
+    ]),
+    (value) => ({ ...value, discriminator: SET_SPEND_POLICY_DISCRIMINATOR }),
   );
 }
 
-export function getCloseLineInstructionDataDecoder(): FixedSizeDecoder<CloseLineInstructionData> {
+export function getSetSpendPolicyInstructionDataDecoder(): Decoder<SetSpendPolicyInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["delegate", getAddressDecoder()],
+    ["periodCapUsdc", getU64Decoder()],
+    ["periodSecs", getI64Decoder()],
+    ["allowedRecipient", getAddressDecoder()],
+    ["merchants", getArrayDecoder(getAddressDecoder())],
   ]);
 }
 
-export function getCloseLineInstructionDataCodec(): FixedSizeCodec<
-  CloseLineInstructionDataArgs,
-  CloseLineInstructionData
+export function getSetSpendPolicyInstructionDataCodec(): Codec<
+  SetSpendPolicyInstructionDataArgs,
+  SetSpendPolicyInstructionData
 > {
   return combineCodec(
-    getCloseLineInstructionDataEncoder(),
-    getCloseLineInstructionDataDecoder(),
+    getSetSpendPolicyInstructionDataEncoder(),
+    getSetSpendPolicyInstructionDataDecoder(),
   );
 }
 
-export type CloseLineAsyncInput<
+export type SetSpendPolicyAsyncInput<
   TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountLine extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSpendPolicy extends InstructionAccountInput = InstructionAccountInput,
   TAccountOwner extends InstructionSignerInput = InstructionSignerInput,
-  TAccountTokenProgram extends InstructionAccountInput =
+  TAccountSystemProgram extends InstructionAccountInput =
     InstructionAccountInput,
 > = {
   config?: TAccountConfig;
-  line: TAccountLine;
+  line?: TAccountLine;
+  spendPolicy?: TAccountSpendPolicy;
   owner: TAccountOwner;
-  tokenProgram?: TAccountTokenProgram;
+  systemProgram?: TAccountSystemProgram;
+  delegate: SetSpendPolicyInstructionDataArgs["delegate"];
+  periodCapUsdc: SetSpendPolicyInstructionDataArgs["periodCapUsdc"];
+  periodSecs: SetSpendPolicyInstructionDataArgs["periodSecs"];
+  allowedRecipient: SetSpendPolicyInstructionDataArgs["allowedRecipient"];
+  merchants: SetSpendPolicyInstructionDataArgs["merchants"];
 };
 
-export async function getCloseLineInstructionAsync<
+export async function getSetSpendPolicyInstructionAsync<
   TAccountConfig extends InstructionAccountInput,
   TAccountLine extends InstructionAccountInput,
+  TAccountSpendPolicy extends InstructionAccountInput,
   TAccountOwner extends InstructionSignerInput,
-  TAccountTokenProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof LEDGERLINE_PROGRAM_ADDRESS,
 >(
-  input: CloseLineAsyncInput<
+  input: SetSpendPolicyAsyncInput<
     TAccountConfig,
     TAccountLine,
+    TAccountSpendPolicy,
     TAccountOwner,
-    TAccountTokenProgram
+    TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  CloseLineInstruction<
+  SetSpendPolicyInstruction<
     TProgramAddress,
     ResolvedInstructionAccountMeta<
       TAccountConfig,
@@ -145,12 +193,16 @@ export async function getCloseLineInstructionAsync<
       InstructionAccountInputAddress<TAccountLine>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountSpendPolicy,
+      InstructionAccountInputAddress<TAccountSpendPolicy>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountOwner,
       InstructionAccountInputAddress<TAccountOwner>
     >,
     ResolvedInstructionAccountMeta<
-      TAccountTokenProgram,
-      InstructionAccountInputAddress<TAccountTokenProgram>
+      TAccountSystemProgram,
+      InstructionAccountInputAddress<TAccountSystemProgram>
     >
   >
 > {
@@ -163,10 +215,15 @@ export async function getCloseLineInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     config: { value: input.config ?? null, isSigner: false, isWritable: false },
-    line: { value: input.line ?? null, isSigner: false, isWritable: true },
+    line: { value: input.line ?? null, isSigner: false, isWritable: false },
+    spendPolicy: {
+      value: input.spendPolicy ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     owner: { value: input.owner ?? null, isSigner: true, isWritable: true },
-    tokenProgram: {
-      value: input.tokenProgram ?? null,
+    systemProgram: {
+      value: input.systemProgram ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -176,25 +233,53 @@ export async function getCloseLineInstructionAsync<
     ResolvedInstructionAccount
   >;
 
+  // Original args.
+  const args = { ...input };
+
   // Resolve default values.
   if (!accounts.config.value) {
     accounts.config.value = await findConfigPda({ programAddress });
   }
-  if (!accounts.tokenProgram.value) {
-    accounts.tokenProgram.value =
-      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
+  if (!accounts.line.value) {
+    accounts.line.value = await findLinePda(
+      {
+        owner: getAddressFromResolvedInstructionAccount(
+          "owner",
+          accounts.owner.value,
+        ),
+      },
+      { programAddress },
+    );
+  }
+  if (!accounts.spendPolicy.value) {
+    accounts.spendPolicy.value = await findSpendPolicyPda(
+      {
+        line: getAddressFromResolvedInstructionAccount(
+          "line",
+          accounts.line.value,
+        ),
+      },
+      { programAddress },
+    );
+  }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value =
+      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
   }
 
   return Object.freeze({
     accounts: [
       getAccountMeta("config", accounts.config),
       getAccountMeta("line", accounts.line),
+      getAccountMeta("spendPolicy", accounts.spendPolicy),
       getAccountMeta("owner", accounts.owner),
-      getAccountMeta("tokenProgram", accounts.tokenProgram),
+      getAccountMeta("systemProgram", accounts.systemProgram),
     ],
-    data: getCloseLineInstructionDataEncoder().encode({}),
+    data: getSetSpendPolicyInstructionDataEncoder().encode(
+      args as SetSpendPolicyInstructionDataArgs,
+    ),
     programAddress,
-  } as CloseLineInstruction<
+  } as SetSpendPolicyInstruction<
     TProgramAddress,
     ResolvedInstructionAccountMeta<
       TAccountConfig,
@@ -205,44 +290,57 @@ export async function getCloseLineInstructionAsync<
       InstructionAccountInputAddress<TAccountLine>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountSpendPolicy,
+      InstructionAccountInputAddress<TAccountSpendPolicy>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountOwner,
       InstructionAccountInputAddress<TAccountOwner>
     >,
     ResolvedInstructionAccountMeta<
-      TAccountTokenProgram,
-      InstructionAccountInputAddress<TAccountTokenProgram>
+      TAccountSystemProgram,
+      InstructionAccountInputAddress<TAccountSystemProgram>
     >
   >);
 }
 
-export type CloseLineInput<
+export type SetSpendPolicyInput<
   TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountLine extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSpendPolicy extends InstructionAccountInput = InstructionAccountInput,
   TAccountOwner extends InstructionSignerInput = InstructionSignerInput,
-  TAccountTokenProgram extends InstructionAccountInput =
+  TAccountSystemProgram extends InstructionAccountInput =
     InstructionAccountInput,
 > = {
   config: TAccountConfig;
   line: TAccountLine;
+  spendPolicy: TAccountSpendPolicy;
   owner: TAccountOwner;
-  tokenProgram?: TAccountTokenProgram;
+  systemProgram?: TAccountSystemProgram;
+  delegate: SetSpendPolicyInstructionDataArgs["delegate"];
+  periodCapUsdc: SetSpendPolicyInstructionDataArgs["periodCapUsdc"];
+  periodSecs: SetSpendPolicyInstructionDataArgs["periodSecs"];
+  allowedRecipient: SetSpendPolicyInstructionDataArgs["allowedRecipient"];
+  merchants: SetSpendPolicyInstructionDataArgs["merchants"];
 };
 
-export function getCloseLineInstruction<
+export function getSetSpendPolicyInstruction<
   TAccountConfig extends InstructionAccountInput,
   TAccountLine extends InstructionAccountInput,
+  TAccountSpendPolicy extends InstructionAccountInput,
   TAccountOwner extends InstructionSignerInput,
-  TAccountTokenProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof LEDGERLINE_PROGRAM_ADDRESS,
 >(
-  input: CloseLineInput<
+  input: SetSpendPolicyInput<
     TAccountConfig,
     TAccountLine,
+    TAccountSpendPolicy,
     TAccountOwner,
-    TAccountTokenProgram
+    TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
-): CloseLineInstruction<
+): SetSpendPolicyInstruction<
   TProgramAddress,
   ResolvedInstructionAccountMeta<
     TAccountConfig,
@@ -253,12 +351,16 @@ export function getCloseLineInstruction<
     InstructionAccountInputAddress<TAccountLine>
   >,
   ResolvedInstructionAccountMeta<
+    TAccountSpendPolicy,
+    InstructionAccountInputAddress<TAccountSpendPolicy>
+  >,
+  ResolvedInstructionAccountMeta<
     TAccountOwner,
     InstructionAccountInputAddress<TAccountOwner>
   >,
   ResolvedInstructionAccountMeta<
-    TAccountTokenProgram,
-    InstructionAccountInputAddress<TAccountTokenProgram>
+    TAccountSystemProgram,
+    InstructionAccountInputAddress<TAccountSystemProgram>
   >
 > {
   // Program address.
@@ -270,10 +372,15 @@ export function getCloseLineInstruction<
   // Original accounts.
   const originalAccounts = {
     config: { value: input.config ?? null, isSigner: false, isWritable: false },
-    line: { value: input.line ?? null, isSigner: false, isWritable: true },
+    line: { value: input.line ?? null, isSigner: false, isWritable: false },
+    spendPolicy: {
+      value: input.spendPolicy ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     owner: { value: input.owner ?? null, isSigner: true, isWritable: true },
-    tokenProgram: {
-      value: input.tokenProgram ?? null,
+    systemProgram: {
+      value: input.systemProgram ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -283,22 +390,28 @@ export function getCloseLineInstruction<
     ResolvedInstructionAccount
   >;
 
+  // Original args.
+  const args = { ...input };
+
   // Resolve default values.
-  if (!accounts.tokenProgram.value) {
-    accounts.tokenProgram.value =
-      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value =
+      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
   }
 
   return Object.freeze({
     accounts: [
       getAccountMeta("config", accounts.config),
       getAccountMeta("line", accounts.line),
+      getAccountMeta("spendPolicy", accounts.spendPolicy),
       getAccountMeta("owner", accounts.owner),
-      getAccountMeta("tokenProgram", accounts.tokenProgram),
+      getAccountMeta("systemProgram", accounts.systemProgram),
     ],
-    data: getCloseLineInstructionDataEncoder().encode({}),
+    data: getSetSpendPolicyInstructionDataEncoder().encode(
+      args as SetSpendPolicyInstructionDataArgs,
+    ),
     programAddress,
-  } as CloseLineInstruction<
+  } as SetSpendPolicyInstruction<
     TProgramAddress,
     ResolvedInstructionAccountMeta<
       TAccountConfig,
@@ -309,17 +422,21 @@ export function getCloseLineInstruction<
       InstructionAccountInputAddress<TAccountLine>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountSpendPolicy,
+      InstructionAccountInputAddress<TAccountSpendPolicy>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountOwner,
       InstructionAccountInputAddress<TAccountOwner>
     >,
     ResolvedInstructionAccountMeta<
-      TAccountTokenProgram,
-      InstructionAccountInputAddress<TAccountTokenProgram>
+      TAccountSystemProgram,
+      InstructionAccountInputAddress<TAccountSystemProgram>
     >
   >);
 }
 
-export type ParsedCloseLineInstruction<
+export type ParsedSetSpendPolicyInstruction<
   TProgram extends string = typeof LEDGERLINE_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
@@ -327,26 +444,27 @@ export type ParsedCloseLineInstruction<
   accounts: {
     config: TAccountMetas[0];
     line: TAccountMetas[1];
-    owner: TAccountMetas[2];
-    tokenProgram: TAccountMetas[3];
+    spendPolicy: TAccountMetas[2];
+    owner: TAccountMetas[3];
+    systemProgram: TAccountMetas[4];
   };
-  data: CloseLineInstructionData;
+  data: SetSpendPolicyInstructionData;
 };
 
-export function parseCloseLineInstruction<
+export function parseSetSpendPolicyInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedCloseLineInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 4) {
+): ParsedSetSpendPolicyInstruction<TProgram, TAccountMetas> {
+  if (instruction.accounts.length < 5) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 4,
+        expectedAccountMetas: 5,
       },
     );
   }
@@ -361,9 +479,10 @@ export function parseCloseLineInstruction<
     accounts: {
       config: getNextAccount(),
       line: getNextAccount(),
+      spendPolicy: getNextAccount(),
       owner: getNextAccount(),
-      tokenProgram: getNextAccount(),
+      systemProgram: getNextAccount(),
     },
-    data: getCloseLineInstructionDataDecoder().decode(instruction.data),
+    data: getSetSpendPolicyInstructionDataDecoder().decode(instruction.data),
   };
 }

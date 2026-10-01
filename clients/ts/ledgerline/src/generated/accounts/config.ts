@@ -19,6 +19,8 @@ import {
   getAddressEncoder,
   getArrayDecoder,
   getArrayEncoder,
+  getBooleanDecoder,
+  getBooleanEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getI64Decoder,
@@ -73,8 +75,13 @@ export type Config = {
   feeBpsDividend: number;
   baseAprBps: number;
   operatingState: OperatingState;
-  /** Pyth pull-oracle receiver program id. `Pubkey::default()` = sandbox (keeper marks allowed). */
+  /** Pyth pull-oracle receiver program id. Unset does **not** trust keeper marks. */
   pythReceiver: Address;
+  /**
+   * When true, `resize_line` may accept keeper marks with no Pyth accounts.
+   * Off by default. Must be set explicitly by the admin.
+   */
+  permissivePricing: boolean;
   createdAt: bigint;
 };
 
@@ -93,8 +100,13 @@ export type ConfigArgs = {
   feeBpsDividend: number;
   baseAprBps: number;
   operatingState: OperatingStateArgs;
-  /** Pyth pull-oracle receiver program id. `Pubkey::default()` = sandbox (keeper marks allowed). */
+  /** Pyth pull-oracle receiver program id. Unset does **not** trust keeper marks. */
   pythReceiver: Address;
+  /**
+   * When true, `resize_line` may accept keeper marks with no Pyth accounts.
+   * Off by default. Must be set explicitly by the admin.
+   */
+  permissivePricing: boolean;
   createdAt: number | bigint;
 };
 
@@ -116,6 +128,7 @@ export function getConfigEncoder(): FixedSizeEncoder<ConfigArgs> {
       ["baseAprBps", getU16Encoder()],
       ["operatingState", getOperatingStateEncoder()],
       ["pythReceiver", getAddressEncoder()],
+      ["permissivePricing", getBooleanEncoder()],
       ["createdAt", getI64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: CONFIG_DISCRIMINATOR }),
@@ -139,6 +152,7 @@ export function getConfigDecoder(): FixedSizeDecoder<Config> {
     ["baseAprBps", getU16Decoder()],
     ["operatingState", getOperatingStateDecoder()],
     ["pythReceiver", getAddressDecoder()],
+    ["permissivePricing", getBooleanDecoder()],
     ["createdAt", getI64Decoder()],
   ]);
 }
@@ -202,5 +216,5 @@ export async function fetchAllMaybeConfig(
 }
 
 export function getConfigSize(): number {
-  return 442;
+  return 443;
 }

@@ -183,11 +183,10 @@ pub fn pyth_price_to_mark(p: &PythPrice, now: i64, session: Session) -> Result<P
 
 /// Verify optional Pyth accounts against keeper-supplied marks.
 ///
-/// - If `pyth_accounts` is empty and `config_pyth_receiver` is **set**
-///   (production), the instruction fails with `StalePrice`: keeper marks are
-///   never trusted once the receiver is pinned.
-/// - If `pyth_accounts` is empty and the receiver is `default()` (sandbox),
-///   return `marks` as-is (trusted path, logged).
+/// - `permissive` is `config.permissive_pricing`. It is **off by default**.
+///   An unset Pyth receiver does not enable keeper marks.
+/// - If `pyth_accounts` is empty and permissive is false, fail with `StalePrice`.
+/// - If `pyth_accounts` is empty and permissive is true, return `marks` and log it.
 /// - If `pyth_accounts.len() == marks.len()`, parse each with the real layout,
 ///   verify feed_id matches `assets[i].equity_feed_id` or `token_feed_id`,
 ///   check staleness, and *replace* `marks[i]` with the on-chain value. If
@@ -197,19 +196,19 @@ pub fn verify_or_replace_marks(
     mut marks: Vec<PriceMark>,
     pyth_accounts: &[AccountInfo],
     config_pyth_receiver: &Pubkey,
+    permissive: bool,
     now: i64,
     session: Session,
 ) -> Result<Vec<PriceMark>> {
-    let permissive = config_pyth_receiver == &Pubkey::default();
     if pyth_accounts.is_empty() {
         if !permissive {
             msg!(
-                "pyth: strict mode (receiver set) but no PriceUpdateV2 accounts supplied — refusing to trust keeper marks"
+                "pyth: strict mode (permissive_pricing = false) — refusing keeper marks without PriceUpdateV2 accounts"
             );
             return Err(error!(LedgerlineError::StalePrice));
         }
         msg!(
-            "pyth: sandbox mode (no receiver pinned) — using keeper marks (trusted, logged)"
+            "pyth: PERMISSIVE PRICING — config.permissive_pricing is set; accepting keeper marks without Pyth verification"
         );
         for (i, m) in marks.iter().enumerate() {
             msg!(

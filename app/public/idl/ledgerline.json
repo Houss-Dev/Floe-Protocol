@@ -101,9 +101,8 @@
       "docs": [
         "Close the line once debt is repaid and collateral withdrawn.",
         "",
-        "Returning collateral needs a vault and destination account per mint,",
-        "which does not fit a variable-length account list. The borrower",
-        "withdraws each slot first — which re-checks health — then closes."
+        "Remaining accounts are the line's vault token accounts (zero balance).",
+        "Each is closed and its rent returned to the owner."
       ],
       "discriminator": [
         190,
@@ -163,6 +162,9 @@
           "relations": [
             "line"
           ]
+        },
+        {
+          "name": "token_program"
         }
       ],
       "args": []
@@ -380,11 +382,34 @@
           "writable": true
         },
         {
-          "name": "keeper",
-          "signer": true,
-          "relations": [
-            "config"
-          ]
+          "name": "authority",
+          "docs": [
+            "Line owner, or the delegate named on `spend_policy`."
+          ],
+          "signer": true
+        },
+        {
+          "name": "spend_policy",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  112,
+                  101,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line"
+              }
+            ]
+          }
         },
         {
           "name": "token_program"
@@ -670,6 +695,91 @@
         },
         {
           "name": "usdc_mint"
+        },
+        {
+          "name": "program_data",
+          "docs": [
+            "Program data of this program. The signer must be its upgrade authority,",
+            "so `init_config` cannot be front-run by an arbitrary payer."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  168,
+                  18,
+                  159,
+                  161,
+                  222,
+                  58,
+                  91,
+                  232,
+                  242,
+                  5,
+                  220,
+                  65,
+                  178,
+                  115,
+                  16,
+                  140,
+                  95,
+                  245,
+                  235,
+                  136,
+                  155,
+                  188,
+                  211,
+                  163,
+                  165,
+                  206,
+                  67,
+                  53,
+                  4,
+                  179,
+                  201,
+                  51
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                2,
+                168,
+                246,
+                145,
+                78,
+                136,
+                161,
+                176,
+                226,
+                16,
+                21,
+                62,
+                247,
+                99,
+                174,
+                43,
+                0,
+                194,
+                185,
+                61,
+                22,
+                193,
+                36,
+                210,
+                192,
+                83,
+                122,
+                16,
+                4,
+                128,
+                0,
+                0
+              ]
+            }
+          }
         },
         {
           "name": "admin",
@@ -962,7 +1072,9 @@
     {
       "name": "repay",
       "docs": [
-        "Repay debt. Called by the user, or by the dividend engine on their behalf."
+        "Repay debt. Called by the user, or by the dividend engine on their behalf.",
+        "Overpayment is refused: only the outstanding obligation (principal plus",
+        "interest accrued up to now) is pulled from the payer."
       ],
       "discriminator": [
         234,
@@ -1057,9 +1169,9 @@
         "Each is validated as a genuine `Asset` of this program by its owner and",
         "discriminator, then matched to a slot by mint.",
         "",
-        "In the MVP the marks come from the keeper rather than from an on-chain",
-        "Pyth receiver account. The keeper is trusted, and the marks are logged.",
-        "Swapping in an on-chain `PriceUpdateV2` read is the production fix."
+        "Marks are verified against optional Pyth `PriceUpdateV2` accounts in",
+        "`remaining_accounts` when `config.pyth_receiver` is set; otherwise sandbox",
+        "mode accepts keeper marks (logged)."
       ],
       "discriminator": [
         49,
@@ -1189,6 +1301,9 @@
               }
             ]
           }
+        },
+        {
+          "name": "stock_mint"
         },
         {
           "name": "admin",
@@ -1369,6 +1484,222 @@
       ]
     },
     {
+      "name": "set_permissive_pricing",
+      "docs": [
+        "Explicit opt-in for keeper marks when no Pyth accounts are supplied.",
+        "Off by default, including when `pyth_receiver` is unset."
+      ],
+      "discriminator": [
+        164,
+        146,
+        53,
+        158,
+        238,
+        240,
+        220,
+        80
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "enabled",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "set_pyth_receiver",
+      "docs": [
+        "Pin the Pyth receiver for on-chain price verification (`resize_line`).",
+        "Unset does not enable keeper marks — see `set_permissive_pricing`."
+      ],
+      "discriminator": [
+        217,
+        76,
+        144,
+        80,
+        35,
+        157,
+        142,
+        88
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "pyth_receiver",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "set_spend_policy",
+      "docs": [
+        "Owner approves a delegate, a per-period USDC cap, and who may receive draws."
+      ],
+      "discriminator": [
+        26,
+        146,
+        213,
+        49,
+        37,
+        211,
+        246,
+        101
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "line",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "spend_policy",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  112,
+                  101,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "line"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "line"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "delegate",
+          "type": "pubkey"
+        },
+        {
+          "name": "period_cap_usdc",
+          "type": "u64"
+        },
+        {
+          "name": "period_secs",
+          "type": "i64"
+        },
+        {
+          "name": "allowed_recipient",
+          "type": "pubkey"
+        },
+        {
+          "name": "merchants",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
+    },
+    {
       "name": "settle_dividend",
       "docs": [
         "Apply a harvested dividend: convert it to USDC and route it.",
@@ -1489,7 +1820,8 @@
         {
           "name": "user_usdc",
           "docs": [
-            "Borrower's USDC. Only required when the payout mode is `Payout`."
+            "Borrower's USDC. Only required when the payout mode is `Payout`.",
+            "Must be owned by the line owner — a keeper cannot redirect the payout."
           ],
           "writable": true,
           "optional": true
@@ -1509,9 +1841,98 @@
       "args": []
     },
     {
+      "name": "sweep_treasury",
+      "docs": [
+        "Move harvested collateral out of the treasury. Admin only.",
+        "The treasury token account is owned by the config PDA; nothing else can sign for it."
+      ],
+      "discriminator": [
+        125,
+        203,
+        4,
+        4,
+        87,
+        34,
+        238,
+        169
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "destination",
+          "writable": true
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "withdraw",
       "docs": [
-        "Return collateral, but only if the line stays healthy afterwards."
+        "Return collateral, but only if the line stays healthy afterwards.",
+        "",
+        "While debt is outstanding the last sizing must still be fresh, and each",
+        "slot is revalued from the price and LTV stored at that sizing — never",
+        "from a raw-token share of the blended limit."
       ],
       "discriminator": [
         183,
@@ -1667,6 +2088,19 @@
         227,
         202,
         24
+      ]
+    },
+    {
+      "name": "SpendPolicy",
+      "discriminator": [
+        139,
+        90,
+        209,
+        31,
+        205,
+        15,
+        68,
+        243
       ]
     }
   ],
@@ -1932,6 +2366,31 @@
       "code": 6038,
       "name": "TransferFeeTooHigh",
       "msg": "The collateral mint's transfer fee exceeds the asset's declared maximum"
+    },
+    {
+      "code": 6039,
+      "name": "UnauthorizedDraw",
+      "msg": "Draw signer is neither the line owner nor the approved delegate"
+    },
+    {
+      "code": 6040,
+      "name": "DrawCapExceeded",
+      "msg": "Delegate draw would exceed the per-period spending cap"
+    },
+    {
+      "code": 6041,
+      "name": "RecipientNotAllowed",
+      "msg": "Draw recipient is not the owner's allowed account or an allowlisted merchant"
+    },
+    {
+      "code": 6042,
+      "name": "DividendMarkDeviation",
+      "msg": "Dividend price mark deviates from the stored slot price beyond the bound"
+    },
+    {
+      "code": 6043,
+      "name": "NotUpgradeAuthority",
+      "msg": "Signer is not the program upgrade authority"
     }
   ],
   "types": [
@@ -2169,6 +2628,32 @@
           {
             "name": "in_use",
             "type": "bool"
+          },
+          {
+            "name": "decimals",
+            "docs": [
+              "Mint decimals copied at deposit. Withdraw and liquidation revalue",
+              "without reloading every asset account."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "last_price",
+            "docs": [
+              "USD per whole share at the last `resize_line`, 1e9 fixed point."
+            ],
+            "type": {
+              "defined": {
+                "name": "Fixed"
+              }
+            }
+          },
+          {
+            "name": "last_ltv_bps",
+            "docs": [
+              "Effective LTV (bps) applied to this slot at the last sizing."
+            ],
+            "type": "u16"
           }
         ]
       }
@@ -2245,6 +2730,21 @@
                 "name": "OperatingState"
               }
             }
+          },
+          {
+            "name": "pyth_receiver",
+            "docs": [
+              "Pyth pull-oracle receiver program id. Unset does **not** trust keeper marks."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "permissive_pricing",
+            "docs": [
+              "When true, `resize_line` may accept keeper marks with no Pyth accounts.",
+              "Off by default. Must be set explicitly by the admin."
+            ],
+            "type": "bool"
           },
           {
             "name": "created_at",
@@ -2803,6 +3303,69 @@
           },
           {
             "name": "Closed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SpendPolicy",
+      "docs": [
+        "Owner-approved spending rights for a delegate (typically the keeper).",
+        "PDA seeded `[SPEND_SEED, line]`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "line",
+            "type": "pubkey"
+          },
+          {
+            "name": "delegate",
+            "type": "pubkey"
+          },
+          {
+            "name": "period_cap_usdc",
+            "docs": [
+              "Max USDC (6dp), including the draw fee, the delegate may disburse per period."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "spent_this_period",
+            "type": "u64"
+          },
+          {
+            "name": "period_start",
+            "type": "i64"
+          },
+          {
+            "name": "period_secs",
+            "type": "i64"
+          },
+          {
+            "name": "allowed_recipient",
+            "docs": [
+              "Owner's own USDC token account, always an allowed recipient."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "merchants",
+            "type": {
+              "array": [
+                "pubkey",
+                4
+              ]
+            }
+          },
+          {
+            "name": "n_merchants",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }

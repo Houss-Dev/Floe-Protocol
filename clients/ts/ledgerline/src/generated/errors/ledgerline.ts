@@ -92,6 +92,16 @@ export const LEDGERLINE_ERROR__PRE_IPO_HARVEST_UNSUPPORTED = 0x1794; // 6036
 export const LEDGERLINE_ERROR__MINT_EXTENSION_NOT_ALLOWED = 0x1795; // 6037
 /** TransferFeeTooHigh: The collateral mint's transfer fee exceeds the asset's declared maximum */
 export const LEDGERLINE_ERROR__TRANSFER_FEE_TOO_HIGH = 0x1796; // 6038
+/** UnauthorizedDraw: Draw signer is neither the line owner nor the approved delegate */
+export const LEDGERLINE_ERROR__UNAUTHORIZED_DRAW = 0x1797; // 6039
+/** DrawCapExceeded: Delegate draw would exceed the per-period spending cap */
+export const LEDGERLINE_ERROR__DRAW_CAP_EXCEEDED = 0x1798; // 6040
+/** RecipientNotAllowed: Draw recipient is not the owner's allowed account or an allowlisted merchant */
+export const LEDGERLINE_ERROR__RECIPIENT_NOT_ALLOWED = 0x1799; // 6041
+/** DividendMarkDeviation: Dividend price mark deviates from the stored slot price beyond the bound */
+export const LEDGERLINE_ERROR__DIVIDEND_MARK_DEVIATION = 0x179a; // 6042
+/** NotUpgradeAuthority: Signer is not the program upgrade authority */
+export const LEDGERLINE_ERROR__NOT_UPGRADE_AUTHORITY = 0x179b; // 6043
 
 export type LedgerlineError =
   | typeof LEDGERLINE_ERROR__ALREADY_HARVESTED
@@ -101,6 +111,8 @@ export type LedgerlineError =
   | typeof LEDGERLINE_ERROR__COLLATERAL_FULL
   | typeof LEDGERLINE_ERROR__COLLATERAL_REMAINING
   | typeof LEDGERLINE_ERROR__CORPORATE_ACTION_REJECTED
+  | typeof LEDGERLINE_ERROR__DIVIDEND_MARK_DEVIATION
+  | typeof LEDGERLINE_ERROR__DRAW_CAP_EXCEEDED
   | typeof LEDGERLINE_ERROR__FEED_MISMATCH
   | typeof LEDGERLINE_ERROR__INSUFFICIENT_COLLATERAL
   | typeof LEDGERLINE_ERROR__INSUFFICIENT_CREDIT
@@ -117,18 +129,21 @@ export type LedgerlineError =
   | typeof LEDGERLINE_ERROR__MATH_OVERFLOW
   | typeof LEDGERLINE_ERROR__MINT_EXTENSION_NOT_ALLOWED
   | typeof LEDGERLINE_ERROR__NOT_KEEPER
+  | typeof LEDGERLINE_ERROR__NOT_UPGRADE_AUTHORITY
   | typeof LEDGERLINE_ERROR__OPERATING_STATE_FORBIDS
   | typeof LEDGERLINE_ERROR__OUTSTANDING_DEBT
   | typeof LEDGERLINE_ERROR__OVERFLOW
   | typeof LEDGERLINE_ERROR__PAUSED
   | typeof LEDGERLINE_ERROR__PRE_IPO_HARVEST_UNSUPPORTED
   | typeof LEDGERLINE_ERROR__PRE_IPO_SIZING_STALE
+  | typeof LEDGERLINE_ERROR__RECIPIENT_NOT_ALLOWED
   | typeof LEDGERLINE_ERROR__REINVEST_NOT_IMPLEMENTED
   | typeof LEDGERLINE_ERROR__SESSION_ERROR
   | typeof LEDGERLINE_ERROR__SLOT_NOT_FOUND
   | typeof LEDGERLINE_ERROR__STALE_PRICE
   | typeof LEDGERLINE_ERROR__TRANSFER_FEE_TOO_HIGH
   | typeof LEDGERLINE_ERROR__UNAUTHORIZED
+  | typeof LEDGERLINE_ERROR__UNAUTHORIZED_DRAW
   | typeof LEDGERLINE_ERROR__UNSUPPORTED_ASSET
   | typeof LEDGERLINE_ERROR__VALUATION_DIVERGENCE_TOO_LARGE
   | typeof LEDGERLINE_ERROR__WITHDRAWAL_UNSAFE
@@ -144,6 +159,8 @@ if (process.env["NODE_ENV"] !== "production") {
     [LEDGERLINE_ERROR__COLLATERAL_FULL]: `All collateral slots are in use`,
     [LEDGERLINE_ERROR__COLLATERAL_REMAINING]: `Withdraw all collateral before closing the line`,
     [LEDGERLINE_ERROR__CORPORATE_ACTION_REJECTED]: `Multiplier change is too large to be a dividend`,
+    [LEDGERLINE_ERROR__DIVIDEND_MARK_DEVIATION]: `Dividend price mark deviates from the stored slot price beyond the bound`,
+    [LEDGERLINE_ERROR__DRAW_CAP_EXCEEDED]: `Delegate draw would exceed the per-period spending cap`,
     [LEDGERLINE_ERROR__FEED_MISMATCH]: `Supplied feed does not match the configured asset`,
     [LEDGERLINE_ERROR__INSUFFICIENT_COLLATERAL]: `The line holds less of this collateral than the request asks for`,
     [LEDGERLINE_ERROR__INSUFFICIENT_CREDIT]: `Requested amount exceeds available credit`,
@@ -160,18 +177,21 @@ if (process.env["NODE_ENV"] !== "production") {
     [LEDGERLINE_ERROR__MATH_OVERFLOW]: `Fixed-point overflow`,
     [LEDGERLINE_ERROR__MINT_EXTENSION_NOT_ALLOWED]: `The collateral mint carries an extension this listing policy refuses`,
     [LEDGERLINE_ERROR__NOT_KEEPER]: `Signer is not the configured keeper`,
+    [LEDGERLINE_ERROR__NOT_UPGRADE_AUTHORITY]: `Signer is not the program upgrade authority`,
     [LEDGERLINE_ERROR__OPERATING_STATE_FORBIDS]: `The protocol's operating state forbids this action`,
     [LEDGERLINE_ERROR__OUTSTANDING_DEBT]: `Repay the outstanding debt before closing the line`,
     [LEDGERLINE_ERROR__OVERFLOW]: `Arithmetic overflow`,
     [LEDGERLINE_ERROR__PAUSED]: `Protocol is paused`,
     [LEDGERLINE_ERROR__PRE_IPO_HARVEST_UNSUPPORTED]: `Pre-IPO collateral pays no dividends; harvest does not apply`,
     [LEDGERLINE_ERROR__PRE_IPO_SIZING_STALE]: `A pre-IPO draw requires a sizing no older than two minutes`,
+    [LEDGERLINE_ERROR__RECIPIENT_NOT_ALLOWED]: `Draw recipient is not the owner's allowed account or an allowlisted merchant`,
     [LEDGERLINE_ERROR__REINVEST_NOT_IMPLEMENTED]: `Reinvest payout mode is not implemented yet`,
     [LEDGERLINE_ERROR__SESSION_ERROR]: `Session could not be determined`,
     [LEDGERLINE_ERROR__SLOT_NOT_FOUND]: `No collateral slot holds that mint`,
     [LEDGERLINE_ERROR__STALE_PRICE]: `Reference price is missing or stale`,
     [LEDGERLINE_ERROR__TRANSFER_FEE_TOO_HIGH]: `The collateral mint's transfer fee exceeds the asset's declared maximum`,
     [LEDGERLINE_ERROR__UNAUTHORIZED]: `Signer is not the admin`,
+    [LEDGERLINE_ERROR__UNAUTHORIZED_DRAW]: `Draw signer is neither the line owner nor the approved delegate`,
     [LEDGERLINE_ERROR__UNSUPPORTED_ASSET]: `Asset is not supported or is disabled`,
     [LEDGERLINE_ERROR__VALUATION_DIVERGENCE_TOO_LARGE]: `Pre-IPO mark diverged from the issuer's published mark beyond the asset's cap`,
     [LEDGERLINE_ERROR__WITHDRAWAL_UNSAFE]: `Withdrawal would breach the liquidation threshold`,

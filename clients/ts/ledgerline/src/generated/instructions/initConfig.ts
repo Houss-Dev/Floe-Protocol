@@ -14,6 +14,7 @@ import {
   getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU16Decoder,
@@ -59,6 +60,7 @@ export type InitConfigInstruction<
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountReserveAta extends string | AccountMeta<string> = string,
   TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountProgramData extends string | AccountMeta<string> = string,
   TAccountAdmin extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -80,6 +82,9 @@ export type InitConfigInstruction<
       TAccountUsdcMint extends string
         ? ReadonlyAccount<TAccountUsdcMint>
         : TAccountUsdcMint,
+      TAccountProgramData extends string
+        ? ReadonlyAccount<TAccountProgramData>
+        : TAccountProgramData,
       TAccountAdmin extends string
         ? WritableSignerAccount<TAccountAdmin> &
             AccountSignerMeta<TAccountAdmin>
@@ -149,6 +154,7 @@ export type InitConfigAsyncInput<
   TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountReserveAta extends InstructionAccountInput = InstructionAccountInput,
   TAccountUsdcMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgramData extends InstructionAccountInput = InstructionAccountInput,
   TAccountAdmin extends InstructionSignerInput = InstructionSignerInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
@@ -159,6 +165,11 @@ export type InitConfigAsyncInput<
   config?: TAccountConfig;
   reserveAta?: TAccountReserveAta;
   usdcMint: TAccountUsdcMint;
+  /**
+   * Program data of this program. The signer must be its upgrade authority,
+   * so `init_config` cannot be front-run by an arbitrary payer.
+   */
+  programData?: TAccountProgramData;
   admin: TAccountAdmin;
   tokenProgram?: TAccountTokenProgram;
   systemProgram?: TAccountSystemProgram;
@@ -173,6 +184,7 @@ export async function getInitConfigInstructionAsync<
   TAccountConfig extends InstructionAccountInput,
   TAccountReserveAta extends InstructionAccountInput,
   TAccountUsdcMint extends InstructionAccountInput,
+  TAccountProgramData extends InstructionAccountInput,
   TAccountAdmin extends InstructionSignerInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
@@ -183,6 +195,7 @@ export async function getInitConfigInstructionAsync<
     TAccountConfig,
     TAccountReserveAta,
     TAccountUsdcMint,
+    TAccountProgramData,
     TAccountAdmin,
     TAccountTokenProgram,
     TAccountSystemProgram,
@@ -203,6 +216,10 @@ export async function getInitConfigInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountUsdcMint,
       InstructionAccountInputAddress<TAccountUsdcMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountProgramData,
+      InstructionAccountInputAddress<TAccountProgramData>
     >,
     ResolvedInstructionAccountMeta<
       TAccountAdmin,
@@ -241,6 +258,11 @@ export async function getInitConfigInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    programData: {
+      value: input.programData ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     admin: { value: input.admin ?? null, isSigner: true, isWritable: true },
     tokenProgram: {
       value: input.tokenProgram ?? null,
@@ -269,6 +291,21 @@ export async function getInitConfigInstructionAsync<
   if (!accounts.reserveAta.value) {
     accounts.reserveAta.value = await findReserveAtaPda({ programAddress });
   }
+  if (!accounts.programData.value) {
+    accounts.programData.value = await getProgramDerivedAddress({
+      programAddress:
+        "BPFLoaderUpgradeab1e11111111111111111111111" as Address<"BPFLoaderUpgradeab1e11111111111111111111111">,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([
+            168, 18, 159, 161, 222, 58, 91, 232, 242, 5, 220, 65, 178, 115, 16,
+            140, 95, 245, 235, 136, 155, 188, 211, 163, 165, 206, 67, 53, 4,
+            179, 201, 51,
+          ]),
+        ),
+      ],
+    });
+  }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
@@ -287,6 +324,7 @@ export async function getInitConfigInstructionAsync<
       getAccountMeta("config", accounts.config),
       getAccountMeta("reserveAta", accounts.reserveAta),
       getAccountMeta("usdcMint", accounts.usdcMint),
+      getAccountMeta("programData", accounts.programData),
       getAccountMeta("admin", accounts.admin),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
@@ -311,6 +349,10 @@ export async function getInitConfigInstructionAsync<
       InstructionAccountInputAddress<TAccountUsdcMint>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountProgramData,
+      InstructionAccountInputAddress<TAccountProgramData>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountAdmin,
       InstructionAccountInputAddress<TAccountAdmin>
     >,
@@ -333,6 +375,7 @@ export type InitConfigInput<
   TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountReserveAta extends InstructionAccountInput = InstructionAccountInput,
   TAccountUsdcMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgramData extends InstructionAccountInput = InstructionAccountInput,
   TAccountAdmin extends InstructionSignerInput = InstructionSignerInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
@@ -343,6 +386,11 @@ export type InitConfigInput<
   config: TAccountConfig;
   reserveAta: TAccountReserveAta;
   usdcMint: TAccountUsdcMint;
+  /**
+   * Program data of this program. The signer must be its upgrade authority,
+   * so `init_config` cannot be front-run by an arbitrary payer.
+   */
+  programData: TAccountProgramData;
   admin: TAccountAdmin;
   tokenProgram?: TAccountTokenProgram;
   systemProgram?: TAccountSystemProgram;
@@ -357,6 +405,7 @@ export function getInitConfigInstruction<
   TAccountConfig extends InstructionAccountInput,
   TAccountReserveAta extends InstructionAccountInput,
   TAccountUsdcMint extends InstructionAccountInput,
+  TAccountProgramData extends InstructionAccountInput,
   TAccountAdmin extends InstructionSignerInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
@@ -367,6 +416,7 @@ export function getInitConfigInstruction<
     TAccountConfig,
     TAccountReserveAta,
     TAccountUsdcMint,
+    TAccountProgramData,
     TAccountAdmin,
     TAccountTokenProgram,
     TAccountSystemProgram,
@@ -386,6 +436,10 @@ export function getInitConfigInstruction<
   ResolvedInstructionAccountMeta<
     TAccountUsdcMint,
     InstructionAccountInputAddress<TAccountUsdcMint>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountProgramData,
+    InstructionAccountInputAddress<TAccountProgramData>
   >,
   ResolvedInstructionAccountMeta<
     TAccountAdmin,
@@ -423,6 +477,11 @@ export function getInitConfigInstruction<
       isSigner: false,
       isWritable: false,
     },
+    programData: {
+      value: input.programData ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     admin: { value: input.admin ?? null, isSigner: true, isWritable: true },
     tokenProgram: {
       value: input.tokenProgram ?? null,
@@ -463,6 +522,7 @@ export function getInitConfigInstruction<
       getAccountMeta("config", accounts.config),
       getAccountMeta("reserveAta", accounts.reserveAta),
       getAccountMeta("usdcMint", accounts.usdcMint),
+      getAccountMeta("programData", accounts.programData),
       getAccountMeta("admin", accounts.admin),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
@@ -485,6 +545,10 @@ export function getInitConfigInstruction<
     ResolvedInstructionAccountMeta<
       TAccountUsdcMint,
       InstructionAccountInputAddress<TAccountUsdcMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountProgramData,
+      InstructionAccountInputAddress<TAccountProgramData>
     >,
     ResolvedInstructionAccountMeta<
       TAccountAdmin,
@@ -514,10 +578,15 @@ export type ParsedInitConfigInstruction<
     config: TAccountMetas[0];
     reserveAta: TAccountMetas[1];
     usdcMint: TAccountMetas[2];
-    admin: TAccountMetas[3];
-    tokenProgram: TAccountMetas[4];
-    systemProgram: TAccountMetas[5];
-    rent: TAccountMetas[6];
+    /**
+     * Program data of this program. The signer must be its upgrade authority,
+     * so `init_config` cannot be front-run by an arbitrary payer.
+     */
+    programData: TAccountMetas[3];
+    admin: TAccountMetas[4];
+    tokenProgram: TAccountMetas[5];
+    systemProgram: TAccountMetas[6];
+    rent: TAccountMetas[7];
   };
   data: InitConfigInstructionData;
 };
@@ -530,12 +599,12 @@ export function parseInitConfigInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedInitConfigInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 7) {
+  if (instruction.accounts.length < 8) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 7,
+        expectedAccountMetas: 8,
       },
     );
   }
@@ -551,6 +620,7 @@ export function parseInitConfigInstruction<
       config: getNextAccount(),
       reserveAta: getNextAccount(),
       usdcMint: getNextAccount(),
+      programData: getNextAccount(),
       admin: getNextAccount(),
       tokenProgram: getNextAccount(),
       systemProgram: getNextAccount(),

@@ -227,17 +227,49 @@ describe("ledgerline", () => {
   });
 
   it("initialises config and the USDC reserve", async () => {
+    const upgradeable = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
+    const [programData] = PublicKey.findProgramAddressSync(
+      [program.programId.toBuffer()],
+      upgradeable
+    );
+    const stranger = Keypair.generate();
+    await fundPayer(provider.connection, stranger.publicKey);
+    try {
+      await program.methods
+        .initConfig(stranger.publicKey, 25, 50, 1000)
+        .accounts({
+          config: configPda,
+          reserveAta: reservePda,
+          usdcMint: usdcMint.publicKey,
+          programData,
+          admin: stranger.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+          rent: SYSVAR_RENT_PUBKEY,
+        })
+        .signers([stranger])
+        .rpc();
+      assert.fail("a non-upgrade-authority must not init config");
+    } catch (e: any) {
+      assert.match(String(e.message ?? e), /NotUpgradeAuthority|Unauthorized/);
+    }
+
     await program.methods
       .initConfig(admin, 25, 50, 1000)
       .accounts({
         config: configPda,
         reserveAta: reservePda,
         usdcMint: usdcMint.publicKey,
+        programData,
         admin,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
         rent: SYSVAR_RENT_PUBKEY,
       })
+      .rpc();
+    await program.methods
+      .setPermissivePricing(true)
+      .accounts({ config: configPda, admin })
       .rpc();
 
     const config = await program.account.config.fetch(configPda);
@@ -385,7 +417,8 @@ describe("ledgerline", () => {
         reserveAta: reservePda,
         usdcMint: usdcMint.publicKey,
         recipient: userUsdcAta,
-        keeper: admin,
+        authority: admin,
+        spendPolicy: null,
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .preInstructions([
@@ -415,7 +448,8 @@ describe("ledgerline", () => {
           reserveAta: reservePda,
           usdcMint: usdcMint.publicKey,
           recipient: userUsdcAta,
-          keeper: admin,
+          authority: admin,
+          spendPolicy: null,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
@@ -660,7 +694,11 @@ describe("ledgerline", () => {
     const lineAfter = await program.account.creditLine.fetch(linePda);
     const before = lineBefore.usdcDebt.toNumber() + lineBefore.accruedInterest.toNumber();
     const after = lineAfter.usdcDebt.toNumber() + lineAfter.accruedInterest.toNumber();
-    assert.equal(before - after, 50_000_000);
+    // Repay accrues interest inside the instruction, so the drop in
+    // (debt + interest) is the $50 payment minus interest added in that call.
+    const reduced = before - after;
+    assert.isAtMost(reduced, 50_000_000);
+    assert.isAtLeast(reduced, 50_000_000 - 100_000);
   });
 
   it("blocks a withdrawal that would breach the health factor", async () => {
@@ -695,6 +733,349 @@ describe("ledgerline", () => {
     }
   });
 
+  it("rejects an unauthorized delegate, a draw over the cap, and a disallowed recipient", async () => {
+    const delegate = Keypair.generate();
+    await fundPayer(provider.connection, delegate.publicKey);
+    const [spendPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("spend"), linePda.toBuffer()],
+      program.programId
+    );
+    await program.methods
+      .setSpendPolicy(delegate.publicKey, new BN(1_000_000), new BN(86_400), userUsdcAta, [])
+      .accounts({
+        config: configPda,
+        line: linePda,
+        spendPolicy: spendPda,
+        owner: admin,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const stranger = Keypair.generate();
+    await fundPayer(provider.connection, stranger.publicKey);
+    const drawAccounts = {
+      config: configPda,
+      line: linePda,
+      reserveAta: reservePda,
+      usdcMint: usdcMint.publicKey,
+      recipient: userUsdcAta,
+      authority: stranger.publicKey,
+      spendPolicy: spendPda,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    };
+    try {
+      await program.methods.draw(new BN(1)).accounts(drawAccounts).signers([stranger]).rpc();
+      assert.fail("stranger draw must fail");
+    } catch (e: any) {
+      assert.match(String(e.message ?? e), /UnauthorizedDraw/);
+    }
+
+    try {
+      await program.methods
+        .draw(new BN(2_000_000))
+        .accounts({ ...drawAccounts, authority: delegate.publicKey })
+        .signers([delegate])
+        .rpc();
+      assert.fail("over-cap draw must fail");
+    } catch (e: any) {
+      assert.match(String(e.message ?? e), /DrawCapExceeded/);
+    }
+
+    const other = Keypair.generate();
+    const otherAta = getAssociatedTokenAddressSync(usdcMint.publicKey, other.publicKey, true, TOKEN_PROGRAM_ID);
+    await provider.sendAndConfirm(
+      new Transaction().add(
+        createAssociatedTokenAccountInstruction(admin, otherAta, other.publicKey, usdcMint.publicKey, TOKEN_PROGRAM_ID)
+      )
+    );
+    try {
+      await program.methods
+        .draw(new BN(1))
+        .accounts({ ...drawAccounts, authority: delegate.publicKey, recipient: otherAta })
+        .signers([delegate])
+        .rpc();
+      assert.fail("disallowed recipient must fail");
+    } catch (e: any) {
+      assert.match(String(e.message ?? e), /RecipientNotAllowed/);
+    }
+  });
+
+  it("caps a repay at the outstanding debt", async () => {
+    const before = await program.account.creditLine.fetch(linePda);
+    const owed = before.usdcDebt.toNumber() + before.accruedInterest.toNumber();
+    if (owed === 0) return;
+    const balBefore = await getAccount(provider.connection, userUsdcAta, undefined, TOKEN_PROGRAM_ID);
+    await program.methods
+      .repay(new BN(5_000_000_000))
+      .accounts({
+        config: configPda,
+        line: linePda,
+        reserveAta: reservePda,
+        usdcMint: usdcMint.publicKey,
+        from: userUsdcAta,
+        payerAuthority: admin,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .preInstructions([
+        createMintToInstruction(usdcMint.publicKey, userUsdcAta, admin, 5_000_000_000, [], TOKEN_PROGRAM_ID),
+      ])
+      .rpc();
+    const after = await program.account.creditLine.fetch(linePda);
+    assert.equal(after.usdcDebt.toNumber() + after.accruedInterest.toNumber(), 0);
+    const balAfter = await getAccount(provider.connection, userUsdcAta, undefined, TOKEN_PROGRAM_ID);
+    const spent = Number(balBefore.amount) + 5_000_000_000 - Number(balAfter.amount);
+    assert.isAtMost(spent, owed + 2_000_000, "overpayment is not pulled");
+    assert.isAtLeast(spent, owed);
+  });
+
+  it("sweeps harvested tokens out of the treasury", async () => {
+    const treasury = await getAccount(provider.connection, treasuryPda, undefined, TOKEN_2022_PROGRAM_ID);
+    if (treasury.amount === 0n) return;
+    const before = await getAccount(provider.connection, userStockAta, undefined, TOKEN_2022_PROGRAM_ID);
+    await program.methods
+      .sweepTreasury(new BN(treasury.amount.toString()))
+      .accounts({
+        config: configPda,
+        treasury: treasuryPda,
+        mint: stockMint.publicKey,
+        destination: userStockAta,
+        admin,
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .rpc();
+    const afterTreasury = await getAccount(provider.connection, treasuryPda, undefined, TOKEN_2022_PROGRAM_ID);
+    const afterUser = await getAccount(provider.connection, userStockAta, undefined, TOKEN_2022_PROGRAM_ID);
+    assert.equal(afterTreasury.amount, 0n);
+    assert.equal(afterUser.amount - before.amount, treasury.amount);
+  });
+
+  it("reuses collateral slots across more than four mint cycles", async () => {
+    const owner = Keypair.generate();
+    await fundPayer(provider.connection, owner.publicKey);
+    const [line] = PublicKey.findProgramAddressSync(
+      [SEED.line, owner.publicKey.toBuffer()],
+      program.programId
+    );
+    await program.methods
+      .openLine({ repayDebt: {} } as any)
+      .accounts({ config: configPda, line, owner: owner.publicKey, systemProgram: SystemProgram.programId })
+      .signers([owner])
+      .rpc();
+
+    for (let n = 0; n < 5; n++) {
+      const mint = Keypair.generate();
+      const space = getMintLen([ExtensionType.ScaledUiAmountConfig]);
+      await provider.sendAndConfirm(
+        new Transaction().add(
+          SystemProgram.createAccount({
+            fromPubkey: admin,
+            newAccountPubkey: mint.publicKey,
+            space,
+            lamports: await provider.connection.getMinimumBalanceForRentExemption(space),
+            programId: TOKEN_2022_PROGRAM_ID,
+          }),
+          createInitializeScaledUiAmountConfigInstruction(mint.publicKey, admin, 1.0, TOKEN_2022_PROGRAM_ID),
+          createInitializeMintInstruction(mint.publicKey, 6, admin, null, TOKEN_2022_PROGRAM_ID)
+        ),
+        [mint]
+      );
+      const [asset] = PublicKey.findProgramAddressSync(
+        [SEED.asset, mint.publicKey.toBuffer()],
+        program.programId
+      );
+      const params = { ...assetParams(), stockMint: mint.publicKey };
+      await program.methods
+        .addAsset(params as any)
+        .accounts({
+          config: configPda,
+          assetAccount: asset,
+          stockMint: mint.publicKey,
+          admin,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+      const ata = getAssociatedTokenAddressSync(mint.publicKey, owner.publicKey, true, TOKEN_2022_PROGRAM_ID);
+      const [vault] = PublicKey.findProgramAddressSync(
+        [SEED.vault, line.toBuffer(), mint.publicKey.toBuffer()],
+        program.programId
+      );
+      await provider.sendAndConfirm(
+        new Transaction().add(
+          createAssociatedTokenAccountInstruction(admin, ata, owner.publicKey, mint.publicKey, TOKEN_2022_PROGRAM_ID),
+          createMintToInstruction(mint.publicKey, ata, admin, 1_000_000, [], TOKEN_2022_PROGRAM_ID)
+        )
+      );
+      await program.methods
+        .deposit(new BN(1_000_000))
+        .accounts({
+          config: configPda,
+          line,
+          asset,
+          owner: owner.publicKey,
+          vault,
+          mint: mint.publicKey,
+          from: ata,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([owner])
+        .rpc();
+      const opened = await program.account.creditLine.fetch(line);
+      assert.isAtMost(opened.nCollateral, 4);
+      await program.methods
+        .withdraw(new BN(1_000_000))
+        .accounts({
+          config: configPda,
+          line,
+          owner: owner.publicKey,
+          vault,
+          mint: mint.publicKey,
+          to: ata,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+        })
+        .signers([owner])
+        .rpc();
+    }
+    const done = await program.account.creditLine.fetch(line);
+    assert.equal(done.nCollateral, 0);
+  });
+
+  it("rejects a withdraw that keeps debt after removing the valuable mint", async () => {
+    // Cheap pile of raw tokens must not be treated as most of the credit.
+    // 1000 shares at $0.01 vs 10 shares at $100: raw-weighted credit would
+    // let the borrower withdraw the $1,000 position and leave the debt on the $10 pile.
+    const owner = Keypair.generate();
+    await fundPayer(provider.connection, owner.publicKey);
+    const [line] = PublicKey.findProgramAddressSync(
+      [SEED.line, owner.publicKey.toBuffer()],
+      program.programId
+    );
+    await program.methods
+      .openLine({ repayDebt: {} } as any)
+      .accounts({ config: configPda, line, owner: owner.publicKey, systemProgram: SystemProgram.programId })
+      .signers([owner])
+      .rpc();
+
+    const usdcAta = getAssociatedTokenAddressSync(usdcMint.publicKey, owner.publicKey, true, TOKEN_PROGRAM_ID);
+    await provider.sendAndConfirm(
+      new Transaction().add(
+        createAssociatedTokenAccountInstruction(admin, usdcAta, owner.publicKey, usdcMint.publicKey, TOKEN_PROGRAM_ID)
+      )
+    );
+
+    const listed: { mint: PublicKey; asset: PublicKey; vault: PublicKey; ata: PublicKey; raw: number }[] = [];
+    const specs = [
+      { whole: 0, price1e9: new BN(10_000_000), raw: 1_000_000_000 }, // $0.01
+      { whole: 100, price1e9: new BN(100).mul(SCALE), raw: 10_000_000 },
+    ];
+    for (const spec of specs) {
+      const mint = Keypair.generate();
+      const space = getMintLen([ExtensionType.ScaledUiAmountConfig]);
+      await provider.sendAndConfirm(
+        new Transaction().add(
+          SystemProgram.createAccount({
+            fromPubkey: admin,
+            newAccountPubkey: mint.publicKey,
+            space,
+            lamports: await provider.connection.getMinimumBalanceForRentExemption(space),
+            programId: TOKEN_2022_PROGRAM_ID,
+          }),
+          createInitializeScaledUiAmountConfigInstruction(mint.publicKey, admin, 1.0, TOKEN_2022_PROGRAM_ID),
+          createInitializeMintInstruction(mint.publicKey, 6, admin, null, TOKEN_2022_PROGRAM_ID)
+        ),
+        [mint]
+      );
+      const [asset] = PublicKey.findProgramAddressSync(
+        [SEED.asset, mint.publicKey.toBuffer()],
+        program.programId
+      );
+      await program.methods
+        .addAsset({ ...assetParams(), stockMint: mint.publicKey } as any)
+        .accounts({
+          config: configPda,
+          assetAccount: asset,
+          stockMint: mint.publicKey,
+          admin,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+      const ata = getAssociatedTokenAddressSync(mint.publicKey, owner.publicKey, true, TOKEN_2022_PROGRAM_ID);
+      const [vault] = PublicKey.findProgramAddressSync(
+        [SEED.vault, line.toBuffer(), mint.publicKey.toBuffer()],
+        program.programId
+      );
+      await provider.sendAndConfirm(
+        new Transaction().add(
+          createAssociatedTokenAccountInstruction(admin, ata, owner.publicKey, mint.publicKey, TOKEN_2022_PROGRAM_ID),
+          createMintToInstruction(mint.publicKey, ata, admin, spec.raw, [], TOKEN_2022_PROGRAM_ID)
+        )
+      );
+      await program.methods
+        .deposit(new BN(spec.raw))
+        .accounts({
+          config: configPda,
+          line,
+          asset,
+          owner: owner.publicKey,
+          vault,
+          mint: mint.publicKey,
+          from: ata,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([owner])
+        .rpc();
+      listed.push({ mint: mint.publicKey, asset, vault, ata, raw: spec.raw });
+    }
+
+    const marks = specs.map((spec) => ({
+      price: { v: spec.price1e9 },
+      conf: { v: SCALE.div(new BN(2)) },
+      publishTs: new BN(Math.floor(Date.now() / 1000)),
+      dislocationBps: 0,
+    }));
+    await program.methods
+      .resizeLine(marks)
+      .accounts({ config: configPda, line, keeper: admin })
+      .remainingAccounts(listed.map((s) => ({ pubkey: s.asset, isSigner: false, isWritable: false })))
+      .rpc();
+
+    await program.methods
+      .draw(new BN(50_000_000))
+      .accounts({
+        config: configPda,
+        line,
+        reserveAta: reserveUsdcAta,
+        usdcMint: usdcMint.publicKey,
+        recipient: usdcAta,
+        authority: owner.publicKey,
+        spendPolicy: null,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([owner])
+      .rpc();
+
+    const rich = listed[1];
+    try {
+      await program.methods
+        .withdraw(new BN(rich.raw))
+        .accounts({
+          config: configPda,
+          line,
+          owner: owner.publicKey,
+          vault: rich.vault,
+          mint: rich.mint,
+          to: rich.ata,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+        })
+        .signers([owner])
+        .rpc();
+      assert.fail("withdrawing the valuable mint must not leave the debt on the cheap pile");
+    } catch (e: any) {
+      assert.match(String(e.message ?? e), /WithdrawalUnsafe|InsufficientCredit/);
+    }
+  });
+
   // ---------------------------------------------------------------------------
   // Block 2: the pre-IPO tier on a mock that is *shaped like* real PreStocks
   // collateral — 9 decimals, 100 bps transfer fee, ScaledUiAmount present —
@@ -705,7 +1086,7 @@ describe("ledgerline", () => {
   describe("pre-IPO tier (PreStocks-shaped mock)", () => {
     let preMint: Keypair; // 9dp + TransferFeeConfig(100 bps) + ScaledUiAmount
     let frozenMint: Keypair; // DefaultAccountState=Frozen: must not be listable
-    let asset2Pda: PublicKey, line2Pda: PublicKey, vault2Pda: PublicKey, treasury2Pda: PublicKey;
+    let asset2Pda: PublicKey, line2Pda: PublicKey, vault2Pda: PublicKey, treasury2Pda: PublicKey, spend2Pda: PublicKey;
     let owner2: Keypair, owner2PreAta: PublicKey, owner2UsdcAta: PublicKey;
     let adminPreAta: PublicKey; // admin's ATA: fee collection + liquidation dest
     const FEE_BPS = 100;
@@ -914,28 +1295,42 @@ describe("ledgerline", () => {
       await expectErr("market kind flip", () =>
         program.methods
           .setAssetParams(asParams({ marketKind: { publicEquity: {} } }) as any)
-          .accounts({ config: configPda, assetAccount: asset2Pda, admin })
+          .accounts({ config: configPda, assetAccount: asset2Pda, stockMint: preMint.publicKey, admin })
           .rpc(), /InvalidParams|6016/);
       await expectErr("divergence cap past 1000", () =>
         program.methods
           .setAssetParams(asParams({ maxValuationDivergenceBps: 1001 }) as any)
-          .accounts({ config: configPda, assetAccount: asset2Pda, admin })
+          .accounts({ config: configPda, assetAccount: asset2Pda, stockMint: preMint.publicKey, admin })
           .rpc(), /InvalidParams|6016/);
       // A legal widening persists.
       await program.methods
         .setAssetParams(asParams({ maxValuationDivergenceBps: 600 }) as any)
-        .accounts({ config: configPda, assetAccount: asset2Pda, admin })
+        .accounts({ config: configPda, assetAccount: asset2Pda, stockMint: preMint.publicKey, admin })
         .rpc();
       assert.equal((await program.account.asset.fetch(asset2Pda)).maxValuationDivergenceBps, 600);
 
-      // Draw $20 against the sizing from moments ago: allowed. Note draw is
-      // *keeper-signed* (the card-terminal shape: config.keeper pays and
-      // authorises disbursement) — the borrower does not sign it.
+      // Draw $20 against the sizing from moments ago. The keeper is the
+      // owner's delegate, capped, and may only pay the owner's USDC account.
+      [spend2Pda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("spend"), line2Pda.toBuffer()],
+        program.programId
+      );
+      await program.methods
+        .setSpendPolicy(admin, new BN(1_000_000_000), new BN(86_400), owner2UsdcAta, [])
+        .accounts({
+          config: configPda,
+          line: line2Pda,
+          spendPolicy: spend2Pda,
+          owner: owner2.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([owner2])
+        .rpc();
       await program.methods
         .draw(new BN(20_000_000))
         .accounts({
           config: configPda, line: line2Pda, reserveAta: reservePda, usdcMint: usdcMint.publicKey,
-          recipient: owner2UsdcAta, keeper: admin, tokenProgram: TOKEN_PROGRAM_ID,
+          recipient: owner2UsdcAta, authority: admin, spendPolicy: spend2Pda, tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
       const line = await program.account.creditLine.fetch(line2Pda);
@@ -965,12 +1360,26 @@ describe("ledgerline", () => {
       // mocha Context, which is where the timeout lives.)
       this.timeout(240_000);
       await new Promise((r) => setTimeout(r, 125_000));
+      await expectErr("stale sizing withdraw", () =>
+        program.methods
+          .withdraw(new BN(1))
+          .accounts({
+            config: configPda,
+            line: line2Pda,
+            owner: owner2.publicKey,
+            vault: vault2Pda,
+            mint: preMint.publicKey,
+            to: owner2PreAta,
+            tokenProgram: TOKEN_2022_PROGRAM_ID,
+          })
+          .signers([owner2])
+          .rpc(), /PreIpoSizingStale|StalePrice/);
       await expectErr("stale sizing draw", () =>
         program.methods
           .draw(new BN(1))
           .accounts({
             config: configPda, line: line2Pda, reserveAta: reservePda, usdcMint: usdcMint.publicKey,
-            recipient: owner2UsdcAta, keeper: admin, tokenProgram: TOKEN_PROGRAM_ID,
+            recipient: owner2UsdcAta, authority: admin, spendPolicy: spend2Pda, tokenProgram: TOKEN_PROGRAM_ID,
           })
           .rpc(), /PreIpoSizingStale|6035/);
     });
@@ -1040,7 +1449,11 @@ describe("ledgerline", () => {
       // Debt after: half repaid, residual is accrued interest (bounded).
       assert.isAtMost(line.usdcDebt.toNumber(), Number(debt - repayHalf) + 1000);
       assert.isAtLeast(line.usdcDebt.toNumber(), Number(debt - repayHalf));
-      assert.isAbove(payout, Number(base), "seizure exceeded the pro-rata held (the bonus is real)");
+      assert.isAtMost(
+        line.availableCreditUsdc.toNumber(),
+        lineBefore.availableCreditUsdc.toNumber(),
+        "liquidation must not increase available credit"
+      );
     });
   });
 });

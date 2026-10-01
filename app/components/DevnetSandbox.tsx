@@ -16,6 +16,7 @@ import {
   findAssetPda,
   findVaultPda,
   findReserveAtaPda,
+  findSpendPolicyPda,
   MarketKind,
   PayoutMode,
 } from "@ledgerline/ledgerline";
@@ -409,11 +410,6 @@ export function DevnetSandbox() {
       return res.context.signature;
     },
     draw: async (usd: number) => {
-      if (state?.config?.keeper && wpk && String(state.config.keeper) !== wpk) {
-        throw new Error(
-          `Draw is keeper-signed (card/terminal flow). Run from repo root (Floe): node scripts/keeper-draw.cjs ${wpk} ${usd}`
-        );
-      }
       const resolvedPdas = await pdas;
       const recipient = await destTokenAccountForWallet(
         wpk!,
@@ -421,16 +417,35 @@ export function DevnetSandbox() {
         TOKEN_PROGRAM,
         DEVNET_MINTS.usdcToken as Address
       );
-      const res = await client.ledgerline.instructions.draw({
-        config: resolvedPdas!.config,
-        line: resolvedPdas!.line,
-        reserveAta: resolvedPdas!.reserve,
-        usdcMint: DEVNET_MINTS.usdcMint as Address,
-        recipient,
-        keeper: client.identity,
-        tokenProgram: TOKEN_PROGRAM,
-        amount: toU64(usd),
-      }).sendTransaction();
+      const keeper = state?.config?.keeper;
+      if (keeper) {
+        const [spendPolicy] = await findSpendPolicyPda({ line: resolvedPdas!.line });
+        await client.ledgerline.instructions
+          .setSpendPolicy({
+            config: resolvedPdas!.config,
+            line: resolvedPdas!.line,
+            spendPolicy,
+            owner: client.identity,
+            delegate: keeper,
+            periodCapUsdc: 1_000_000_000_000n,
+            periodSecs: 86_400n,
+            allowedRecipient: recipient,
+            merchants: [],
+          })
+          .sendTransaction();
+      }
+      const res = await client.ledgerline.instructions
+        .draw({
+          config: resolvedPdas!.config,
+          line: resolvedPdas!.line,
+          reserveAta: resolvedPdas!.reserve,
+          usdcMint: DEVNET_MINTS.usdcMint as Address,
+          recipient,
+          authority: client.identity,
+          tokenProgram: TOKEN_PROGRAM,
+          amount: toU64(usd),
+        })
+        .sendTransaction();
       return res.context.signature;
     },
     repay: async (usd: number) => {
@@ -515,7 +530,7 @@ export function DevnetSandbox() {
           <h2 className="text-lg font-semibold text-pro-text">Devnet sandbox</h2>
           <p className="text-xs text-pro-muted">
             Exercises the deployed program with your wallet on Solana devnet. Mock xStock at ${MARKET_PRICE_USD}/share.
-            Keeper is set to your wallet at <code className="font-mono">initConfig</code> so you can draw and resize.
+            Draw is signed by you as the line owner. Approving a draw also sets a spend policy so the keeper may later draw to your USDC account, inside a cap. Resize stays keeper-signed.
           </p>
         </div>
         <div className="text-xs font-mono text-right">
@@ -622,7 +637,7 @@ export function DevnetSandbox() {
                 autoComplete="off"
                 suppressHydrationWarning
               />
-              <span className="text-xs text-pro-muted">USD to draw</span>
+              <span className="text-xs text-pro-muted">USD to draw (owner)</span>
               <button
                 disabled={!!busy || !connected}
                 onClick={() => run("draw", () => actions.draw(parseFloat(drawUsd) || 0))}

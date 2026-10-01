@@ -10,6 +10,8 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getBooleanDecoder,
+  getBooleanEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -20,13 +22,12 @@ import {
   type AccountMeta,
   type AccountSignerMeta,
   type Address,
-  type Codec,
-  type Decoder,
-  type Encoder,
+  type FixedSizeCodec,
+  type FixedSizeDecoder,
+  type FixedSizeEncoder,
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
-  type ReadonlyAccount,
   type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type WritableAccount,
@@ -41,27 +42,19 @@ import {
 } from "@solana/program-client-core";
 import { findConfigPda } from "../pdas";
 import { LEDGERLINE_PROGRAM_ADDRESS } from "../programs";
-import {
-  getAssetDecoder,
-  getAssetEncoder,
-  type Asset,
-  type AssetArgs,
-} from "../types";
 
-export const SET_ASSET_PARAMS_DISCRIMINATOR: ReadonlyUint8Array =
-  new Uint8Array([147, 9, 214, 39, 16, 146, 51, 4]);
+export const SET_PERMISSIVE_PRICING_DISCRIMINATOR: ReadonlyUint8Array =
+  new Uint8Array([164, 146, 53, 158, 238, 240, 220, 80]);
 
-export function getSetAssetParamsDiscriminatorBytes(): ReadonlyUint8Array {
+export function getSetPermissivePricingDiscriminatorBytes(): ReadonlyUint8Array {
   return fixEncoderSize(getBytesEncoder(), 8).encode(
-    SET_ASSET_PARAMS_DISCRIMINATOR,
+    SET_PERMISSIVE_PRICING_DISCRIMINATOR,
   );
 }
 
-export type SetAssetParamsInstruction<
+export type SetPermissivePricingInstruction<
   TProgram extends string = typeof LEDGERLINE_PROGRAM_ADDRESS,
   TAccountConfig extends string | AccountMeta<string> = string,
-  TAccountAssetAccount extends string | AccountMeta<string> = string,
-  TAccountStockMint extends string | AccountMeta<string> = string,
   TAccountAdmin extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
@@ -69,14 +62,8 @@ export type SetAssetParamsInstruction<
   InstructionWithAccounts<
     [
       TAccountConfig extends string
-        ? ReadonlyAccount<TAccountConfig>
+        ? WritableAccount<TAccountConfig>
         : TAccountConfig,
-      TAccountAssetAccount extends string
-        ? WritableAccount<TAccountAssetAccount>
-        : TAccountAssetAccount,
-      TAccountStockMint extends string
-        ? ReadonlyAccount<TAccountStockMint>
-        : TAccountStockMint,
       TAccountAdmin extends string
         ? ReadonlySignerAccount<TAccountAdmin> &
             AccountSignerMeta<TAccountAdmin>
@@ -85,82 +72,65 @@ export type SetAssetParamsInstruction<
     ]
   >;
 
-export type SetAssetParamsInstructionData = {
+export type SetPermissivePricingInstructionData = {
   discriminator: ReadonlyUint8Array;
-  params: Asset;
+  enabled: boolean;
 };
 
-export type SetAssetParamsInstructionDataArgs = { params: AssetArgs };
+export type SetPermissivePricingInstructionDataArgs = { enabled: boolean };
 
-export function getSetAssetParamsInstructionDataEncoder(): Encoder<SetAssetParamsInstructionDataArgs> {
+export function getSetPermissivePricingInstructionDataEncoder(): FixedSizeEncoder<SetPermissivePricingInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["params", getAssetEncoder()],
+      ["enabled", getBooleanEncoder()],
     ]),
-    (value) => ({ ...value, discriminator: SET_ASSET_PARAMS_DISCRIMINATOR }),
+    (value) => ({
+      ...value,
+      discriminator: SET_PERMISSIVE_PRICING_DISCRIMINATOR,
+    }),
   );
 }
 
-export function getSetAssetParamsInstructionDataDecoder(): Decoder<SetAssetParamsInstructionData> {
+export function getSetPermissivePricingInstructionDataDecoder(): FixedSizeDecoder<SetPermissivePricingInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["params", getAssetDecoder()],
+    ["enabled", getBooleanDecoder()],
   ]);
 }
 
-export function getSetAssetParamsInstructionDataCodec(): Codec<
-  SetAssetParamsInstructionDataArgs,
-  SetAssetParamsInstructionData
+export function getSetPermissivePricingInstructionDataCodec(): FixedSizeCodec<
+  SetPermissivePricingInstructionDataArgs,
+  SetPermissivePricingInstructionData
 > {
   return combineCodec(
-    getSetAssetParamsInstructionDataEncoder(),
-    getSetAssetParamsInstructionDataDecoder(),
+    getSetPermissivePricingInstructionDataEncoder(),
+    getSetPermissivePricingInstructionDataDecoder(),
   );
 }
 
-export type SetAssetParamsAsyncInput<
+export type SetPermissivePricingAsyncInput<
   TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
-  TAccountAssetAccount extends InstructionAccountInput =
-    InstructionAccountInput,
-  TAccountStockMint extends InstructionAccountInput = InstructionAccountInput,
   TAccountAdmin extends InstructionSignerInput = InstructionSignerInput,
 > = {
   config?: TAccountConfig;
-  assetAccount: TAccountAssetAccount;
-  stockMint: TAccountStockMint;
   admin: TAccountAdmin;
-  params: SetAssetParamsInstructionDataArgs["params"];
+  enabled: SetPermissivePricingInstructionDataArgs["enabled"];
 };
 
-export async function getSetAssetParamsInstructionAsync<
+export async function getSetPermissivePricingInstructionAsync<
   TAccountConfig extends InstructionAccountInput,
-  TAccountAssetAccount extends InstructionAccountInput,
-  TAccountStockMint extends InstructionAccountInput,
   TAccountAdmin extends InstructionSignerInput,
   TProgramAddress extends Address = typeof LEDGERLINE_PROGRAM_ADDRESS,
 >(
-  input: SetAssetParamsAsyncInput<
-    TAccountConfig,
-    TAccountAssetAccount,
-    TAccountStockMint,
-    TAccountAdmin
-  >,
+  input: SetPermissivePricingAsyncInput<TAccountConfig, TAccountAdmin>,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  SetAssetParamsInstruction<
+  SetPermissivePricingInstruction<
     TProgramAddress,
     ResolvedInstructionAccountMeta<
       TAccountConfig,
       InstructionAccountInputAddress<TAccountConfig>
-    >,
-    ResolvedInstructionAccountMeta<
-      TAccountAssetAccount,
-      InstructionAccountInputAddress<TAccountAssetAccount>
-    >,
-    ResolvedInstructionAccountMeta<
-      TAccountStockMint,
-      InstructionAccountInputAddress<TAccountStockMint>
     >,
     ResolvedInstructionAccountMeta<
       TAccountAdmin,
@@ -176,17 +146,7 @@ export async function getSetAssetParamsInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    config: { value: input.config ?? null, isSigner: false, isWritable: false },
-    assetAccount: {
-      value: input.assetAccount ?? null,
-      isSigner: false,
-      isWritable: true,
-    },
-    stockMint: {
-      value: input.stockMint ?? null,
-      isSigner: false,
-      isWritable: false,
-    },
+    config: { value: input.config ?? null, isSigner: false, isWritable: true },
     admin: { value: input.admin ?? null, isSigner: true, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -205,27 +165,17 @@ export async function getSetAssetParamsInstructionAsync<
   return Object.freeze({
     accounts: [
       getAccountMeta("config", accounts.config),
-      getAccountMeta("assetAccount", accounts.assetAccount),
-      getAccountMeta("stockMint", accounts.stockMint),
       getAccountMeta("admin", accounts.admin),
     ],
-    data: getSetAssetParamsInstructionDataEncoder().encode(
-      args as SetAssetParamsInstructionDataArgs,
+    data: getSetPermissivePricingInstructionDataEncoder().encode(
+      args as SetPermissivePricingInstructionDataArgs,
     ),
     programAddress,
-  } as SetAssetParamsInstruction<
+  } as SetPermissivePricingInstruction<
     TProgramAddress,
     ResolvedInstructionAccountMeta<
       TAccountConfig,
       InstructionAccountInputAddress<TAccountConfig>
-    >,
-    ResolvedInstructionAccountMeta<
-      TAccountAssetAccount,
-      InstructionAccountInputAddress<TAccountAssetAccount>
-    >,
-    ResolvedInstructionAccountMeta<
-      TAccountStockMint,
-      InstructionAccountInputAddress<TAccountStockMint>
     >,
     ResolvedInstructionAccountMeta<
       TAccountAdmin,
@@ -234,47 +184,27 @@ export async function getSetAssetParamsInstructionAsync<
   >);
 }
 
-export type SetAssetParamsInput<
+export type SetPermissivePricingInput<
   TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
-  TAccountAssetAccount extends InstructionAccountInput =
-    InstructionAccountInput,
-  TAccountStockMint extends InstructionAccountInput = InstructionAccountInput,
   TAccountAdmin extends InstructionSignerInput = InstructionSignerInput,
 > = {
   config: TAccountConfig;
-  assetAccount: TAccountAssetAccount;
-  stockMint: TAccountStockMint;
   admin: TAccountAdmin;
-  params: SetAssetParamsInstructionDataArgs["params"];
+  enabled: SetPermissivePricingInstructionDataArgs["enabled"];
 };
 
-export function getSetAssetParamsInstruction<
+export function getSetPermissivePricingInstruction<
   TAccountConfig extends InstructionAccountInput,
-  TAccountAssetAccount extends InstructionAccountInput,
-  TAccountStockMint extends InstructionAccountInput,
   TAccountAdmin extends InstructionSignerInput,
   TProgramAddress extends Address = typeof LEDGERLINE_PROGRAM_ADDRESS,
 >(
-  input: SetAssetParamsInput<
-    TAccountConfig,
-    TAccountAssetAccount,
-    TAccountStockMint,
-    TAccountAdmin
-  >,
+  input: SetPermissivePricingInput<TAccountConfig, TAccountAdmin>,
   config?: { programAddress?: TProgramAddress },
-): SetAssetParamsInstruction<
+): SetPermissivePricingInstruction<
   TProgramAddress,
   ResolvedInstructionAccountMeta<
     TAccountConfig,
     InstructionAccountInputAddress<TAccountConfig>
-  >,
-  ResolvedInstructionAccountMeta<
-    TAccountAssetAccount,
-    InstructionAccountInputAddress<TAccountAssetAccount>
-  >,
-  ResolvedInstructionAccountMeta<
-    TAccountStockMint,
-    InstructionAccountInputAddress<TAccountStockMint>
   >,
   ResolvedInstructionAccountMeta<
     TAccountAdmin,
@@ -289,17 +219,7 @@ export function getSetAssetParamsInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    config: { value: input.config ?? null, isSigner: false, isWritable: false },
-    assetAccount: {
-      value: input.assetAccount ?? null,
-      isSigner: false,
-      isWritable: true,
-    },
-    stockMint: {
-      value: input.stockMint ?? null,
-      isSigner: false,
-      isWritable: false,
-    },
+    config: { value: input.config ?? null, isSigner: false, isWritable: true },
     admin: { value: input.admin ?? null, isSigner: true, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -313,27 +233,17 @@ export function getSetAssetParamsInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta("config", accounts.config),
-      getAccountMeta("assetAccount", accounts.assetAccount),
-      getAccountMeta("stockMint", accounts.stockMint),
       getAccountMeta("admin", accounts.admin),
     ],
-    data: getSetAssetParamsInstructionDataEncoder().encode(
-      args as SetAssetParamsInstructionDataArgs,
+    data: getSetPermissivePricingInstructionDataEncoder().encode(
+      args as SetPermissivePricingInstructionDataArgs,
     ),
     programAddress,
-  } as SetAssetParamsInstruction<
+  } as SetPermissivePricingInstruction<
     TProgramAddress,
     ResolvedInstructionAccountMeta<
       TAccountConfig,
       InstructionAccountInputAddress<TAccountConfig>
-    >,
-    ResolvedInstructionAccountMeta<
-      TAccountAssetAccount,
-      InstructionAccountInputAddress<TAccountAssetAccount>
-    >,
-    ResolvedInstructionAccountMeta<
-      TAccountStockMint,
-      InstructionAccountInputAddress<TAccountStockMint>
     >,
     ResolvedInstructionAccountMeta<
       TAccountAdmin,
@@ -342,34 +252,32 @@ export function getSetAssetParamsInstruction<
   >);
 }
 
-export type ParsedSetAssetParamsInstruction<
+export type ParsedSetPermissivePricingInstruction<
   TProgram extends string = typeof LEDGERLINE_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
     config: TAccountMetas[0];
-    assetAccount: TAccountMetas[1];
-    stockMint: TAccountMetas[2];
-    admin: TAccountMetas[3];
+    admin: TAccountMetas[1];
   };
-  data: SetAssetParamsInstructionData;
+  data: SetPermissivePricingInstructionData;
 };
 
-export function parseSetAssetParamsInstruction<
+export function parseSetPermissivePricingInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedSetAssetParamsInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 4) {
+): ParsedSetPermissivePricingInstruction<TProgram, TAccountMetas> {
+  if (instruction.accounts.length < 2) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 4,
+        expectedAccountMetas: 2,
       },
     );
   }
@@ -381,12 +289,9 @@ export function parseSetAssetParamsInstruction<
   };
   return {
     programAddress: instruction.programAddress,
-    accounts: {
-      config: getNextAccount(),
-      assetAccount: getNextAccount(),
-      stockMint: getNextAccount(),
-      admin: getNextAccount(),
-    },
-    data: getSetAssetParamsInstructionDataDecoder().decode(instruction.data),
+    accounts: { config: getNextAccount(), admin: getNextAccount() },
+    data: getSetPermissivePricingInstructionDataDecoder().decode(
+      instruction.data,
+    ),
   };
 }

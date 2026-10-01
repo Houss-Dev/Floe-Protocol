@@ -22,7 +22,7 @@ wallet = "~/.config/solana/id.json"
 [test]
 startup_wait = 5000
 shutdown_wait = 2000
-upgradeable = false
+upgradeable = true
 
 [test.validator]
 bind_address = "0.0.0.0"

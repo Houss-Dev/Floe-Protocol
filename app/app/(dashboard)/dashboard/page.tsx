@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Zap } from "lucide-react";
 import { SessionBanner, useSession } from "../../../components/SessionBanner";
@@ -12,12 +12,53 @@ import { ClientOnly } from "../../../components/ClientOnly";
 import { DEMO, usdc6 } from "../../../lib/constants";
 import { useConnectedWallet } from "@solana/kit-plugin-wallet/react";
 import { client } from "../../../lib/solana";
+import { findLinePda, MarketKind, type CreditLine } from "@ledgerline/ledgerline";
+
+function slotValueUsdc6(raw: bigint, decimals: number, price1e9: bigint): number {
+  const scale = 10n ** BigInt(decimals);
+  if (scale === 0n || price1e9 === 0n) return 0;
+  return Number((raw * price1e9) / scale / 1000n);
+}
 
 export default function DashboardPage() {
   const session = useSession();
   const connected = useConnectedWallet(client);
+  const wallet = connected?.account?.address;
+  const sample = !wallet;
   const [debt, setDebt] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
+  const [live, setLive] = useState<CreditLine | null>(null);
+  const [lineStatus, setLineStatus] = useState<"idle" | "loading" | "empty" | "legacy">("idle");
+
+  useEffect(() => {
+    if (!wallet) {
+      setLive(null);
+      setLineStatus("idle");
+      return;
+    }
+    let cancel = false;
+    setLineStatus("loading");
+    (async () => {
+      const [line] = await findLinePda({ owner: wallet });
+      const fetched = await client.ledgerline.accounts.creditLine.fetchMaybe(line);
+      if (cancel) return;
+      if (!fetched.exists) {
+        setLive(null);
+        setLineStatus("empty");
+        return;
+      }
+      setLive(fetched.data);
+      setLineStatus("idle");
+    })().catch(() => {
+      if (!cancel) {
+        setLive(null);
+        setLineStatus("legacy");
+      }
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [wallet]);
 
   const ltvForSession = (s: string) => {
     if (s === "Regular") return DEMO.ltvRegularBps;
@@ -25,29 +66,29 @@ export default function DashboardPage() {
     return DEMO.ltvExtendedBps;
   };
   const ltv = ltvForSession(session);
-  const collateralUsd = DEMO.collateralUsd * 1_000_000;
-  const limit = Math.floor((collateralUsd * ltv) / 10_000);
-  const available = Math.max(0, limit - debt);
-  const ltvBps = debt === 0 ? 0 : Math.floor((debt * 10_000) / collateralUsd);
+  const collateralUsd = sample ? DEMO.collateralUsd * 1_000_000 : Number(live?.collateralUsdc ?? 0n);
+  const limit = sample
+    ? Math.floor((collateralUsd * ltv) / 10_000)
+    : Number(live?.creditLimitUsdc ?? 0n);
+  const shownDebt = sample ? debt : Number(live?.usdcDebt ?? 0n) + Number(live?.accruedInterest ?? 0n);
+  const available = sample ? Math.max(0, limit - debt) : Number(live?.availableCreditUsdc ?? 0n);
+  const ltvBps =
+    shownDebt === 0 || collateralUsd === 0 ? 0 : Math.floor((shownDebt * 10_000) / collateralUsd);
 
-  const rows = useMemo(
+  const sampleRows = useMemo(
     () => [
       {
         mint: DEMO.collateralTicker,
         label: "SPDR S&P 500",
-        raw: "10.000000",
         shares: "10.000",
-        mult: "1.000",
-        value: collateralUsd,
+        value: DEMO.collateralUsd * 1_000_000,
         dislocation: 12,
         tier: "public" as const,
       },
       {
         mint: "QQQx",
         label: "Invesco QQQ",
-        raw: "5.000000",
         shares: "5.035",
-        mult: "1.007",
         value: 2_500_000_000,
         dislocation: -38,
         tier: "public" as const,
@@ -55,16 +96,29 @@ export default function DashboardPage() {
       {
         mint: "PRE1x",
         label: "Pre-IPO Round A",
-        raw: "1000.000000",
         shares: "1000.000",
-        mult: "1.000",
         value: 1_250_000_000,
         dislocation: 0,
         tier: "pre-ipo" as const,
       },
     ],
-    [collateralUsd],
+    [],
   );
+
+  const rows = sample
+    ? sampleRows
+    : (live?.collateral ?? []).slice(0, live?.nCollateral ?? 0).map((slot) => {
+        const decimals = slot.decimals || 6;
+        const shares = Number(slot.rawAmount) / 10 ** decimals;
+        return {
+          mint: slot.mint,
+          label: slot.marketKind === MarketKind.PreIpo ? "Pre-IPO" : "Tokenized equity",
+          shares: shares.toLocaleString(undefined, { maximumFractionDigits: 3 }),
+          value: slotValueUsdc6(slot.rawAmount, decimals, slot.lastPrice.v),
+          dislocation: 0,
+          tier: slot.marketKind === MarketKind.PreIpo ? ("pre-ipo" as const) : ("public" as const),
+        };
+      });
 
   return (
     <ClientOnly>
@@ -79,9 +133,19 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {!connected?.account && (
+        {sample && (
           <div className="pro-card border-hot/30 bg-hot/10 p-4 text-sm text-pro-muted">
-            Connect in the top right to interact with the program. Demo numbers below illustrate session-aware sizing.
+            Sample data. Connect a wallet to load your on-chain credit line. These numbers are not a position.
+          </div>
+        )}
+        {lineStatus === "empty" && (
+          <div className="pro-card border-pro-border p-4 text-sm text-pro-muted">
+            This wallet has no credit line yet. Open one in the devnet sandbox below.
+          </div>
+        )}
+        {lineStatus === "legacy" && (
+          <div className="pro-card border-hot/30 bg-hot/10 p-4 text-sm text-pro-muted">
+            A credit line exists but was written by an older program build and cannot be read. Use a fresh wallet after the upgrade.
           </div>
         )}
 
@@ -95,7 +159,8 @@ export default function DashboardPage() {
               {usdc6(available)}
             </div>
             <div className="mt-2 text-sm text-pro-muted">
-              Limit {usdc6(limit)} · Debt {usdc6(debt)} · {(ltv / 100).toFixed(0)}% LTV · {session}
+              Limit {usdc6(limit)} · Debt {usdc6(shownDebt)} · {(sample ? ltv / 100 : ltvBps / 100).toFixed(0)}% LTV · {session}
+              {sample ? " · sample" : ""}
             </div>
             <div className="mt-6 flex flex-wrap gap-2">
               <Link href="/spend" className="pro-btn-primary">
@@ -107,23 +172,25 @@ export default function DashboardPage() {
               <button type="button" className="pro-btn-secondary" suppressHydrationWarning>
                 Deposit
               </button>
-              <button
-                type="button"
-                suppressHydrationWarning
-                onClick={() => {
-                  const fee = Math.floor(200_000_000 * 0.0025);
-                  const total = 200_000_000 + fee;
-                  if (available < total) setToast("Insufficient credit — resize first or repay");
-                  else {
-                    setDebt((d) => d + total);
-                    setToast(`Drew $200 (fee $0.50). Debt now ${usdc6(debt + total)}.`);
-                  }
-                  setTimeout(() => setToast(null), 3000);
-                }}
-                className="pro-btn-secondary text-xs"
-              >
-                Simulate draw $200
-              </button>
+              {sample && (
+                <button
+                  type="button"
+                  suppressHydrationWarning
+                  onClick={() => {
+                    const fee = Math.floor(200_000_000 * 0.0025);
+                    const total = 200_000_000 + fee;
+                    if (available < total) setToast("Insufficient credit — resize first or repay");
+                    else {
+                      setDebt((d) => d + total);
+                      setToast(`Sample draw of $200 (fee $0.50). Debt now ${usdc6(debt + total)}.`);
+                    }
+                    setTimeout(() => setToast(null), 3000);
+                  }}
+                  className="pro-btn-secondary text-xs"
+                >
+                  Simulate draw $200
+                </button>
+              )}
             </div>
             {toast && <div className="mt-3 rounded-lg bg-pro-hover px-3 py-2 text-xs text-pro-text">{toast}</div>}
           </div>
@@ -148,7 +215,7 @@ export default function DashboardPage() {
               <h2 className="font-condensed text-2xl uppercase tracking-tight text-pro-text">Your positions</h2>
             </div>
             <span className="rounded-full border border-pro-border bg-pro-elevated px-3 py-1 text-xs text-pro-muted">
-              3 assets
+              {sample ? "Sample data" : `${rows.length} asset${rows.length === 1 ? "" : "s"}`}
             </span>
           </div>
           <div className="pro-card overflow-hidden">
@@ -159,6 +226,9 @@ export default function DashboardPage() {
               <span>Disloc.</span>
             </div>
             <div className="divide-y divide-pro-border">
+              {rows.length === 0 && (
+                <div className="p-4 text-sm text-pro-muted">No collateral on this line.</div>
+              )}
               {rows.map((r) => (
                 <div
                   key={r.mint}
@@ -207,7 +277,9 @@ export default function DashboardPage() {
               Dividend loop
             </div>
             <p className="mt-2 text-sm text-pro-muted">
-              Last trim ~${DEMO.nextDividendUsd} routed to repay debt when multiplier bumps.
+              {sample
+                ? `Sample: last trim ~$${DEMO.nextDividendUsd}, routed to repay debt when the multiplier bumps.`
+                : `Dividends received ${usdc6(Number(live?.dividendsReceived ?? 0n))}, of which ${usdc6(Number(live?.dividendsToRepay ?? 0n))} repaid debt.`}
             </p>
             <Link href="/dividends" className="pro-btn-secondary mt-4 inline-flex text-xs">
               Dividends →

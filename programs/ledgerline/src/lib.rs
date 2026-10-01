@@ -1,5 +1,7 @@
 ﻿use anchor_lang::prelude::*;
-use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface, TransferChecked};
+use anchor_spl::token_interface::{
+    self, CloseAccount, Mint, TokenAccount, TokenInterface, TransferChecked,
+};
 
 pub mod dividend;
 pub mod error;
@@ -14,8 +16,9 @@ use error::LedgerlineError;
 use math::{session_at, Fixed, Session};
 use multiplier::read_multiplier;
 use risk::{
-    accrue_interest, liquidation_decision, pre_ipo_valuation_ok, size_line, validate_asset,
-    LiqDecision, PricedPosition,
+    accrue_interest, dividend_mark_ok, effective_ltv_bps, liquidation_decision,
+    pre_ipo_valuation_ok, seizure_raw, size_line, stored_slot_credit_usdc, stored_slot_value_usdc,
+    validate_asset, LiqDecision, PricedPosition,
 };
 use pyth::{split_assets_and_pyth, verify_or_replace_marks};
 use state::*;
@@ -55,7 +58,12 @@ pub mod ledgerline {
         config.base_apr_bps = base_apr_bps;
         config.operating_state = state::OperatingState::Normal;
         config.pyth_receiver = Pubkey::default();
+        config.permissive_pricing = false;
         config.created_at = clock.unix_timestamp;
+        require!(
+            ctx.accounts.program_data.upgrade_authority_address == Some(ctx.accounts.admin.key()),
+            LedgerlineError::NotUpgradeAuthority
+        );
 
         msg!(
             "ledgerline: config initialised, reserve {}",
@@ -129,6 +137,8 @@ pub mod ledgerline {
 
     /// Update risk parameters for a listed mint. Admin only.
     pub fn set_asset_params(ctx: Context<SetAssetParams>, params: Asset) -> Result<()> {
+        let mut params = params;
+        params.decimals = ctx.accounts.stock_mint.decimals;
         validate_asset(&params)?;
         let a = &mut ctx.accounts.asset_account;
         require!(
@@ -196,10 +206,58 @@ pub mod ledgerline {
     }
 
     /// Pin the Pyth receiver for on-chain price verification (`resize_line`).
-    /// While unset (`default`), devnet may use keeper-supplied marks.
+    /// Unset does not enable keeper marks — see `set_permissive_pricing`.
     pub fn set_pyth_receiver(ctx: Context<AdminOnly>, pyth_receiver: Pubkey) -> Result<()> {
         ctx.accounts.config.pyth_receiver = pyth_receiver;
         msg!("ledgerline: pyth_receiver set to {}", pyth_receiver);
+        Ok(())
+    }
+
+    /// Explicit opt-in for keeper marks when no Pyth accounts are supplied.
+    /// Off by default, including when `pyth_receiver` is unset.
+    pub fn set_permissive_pricing(ctx: Context<AdminOnly>, enabled: bool) -> Result<()> {
+        ctx.accounts.config.permissive_pricing = enabled;
+        msg!(
+            "ledgerline: permissive_pricing {}",
+            if enabled { "ENABLED" } else { "disabled" }
+        );
+        Ok(())
+    }
+
+    /// Owner approves a delegate, a per-period USDC cap, and who may receive draws.
+    pub fn set_spend_policy(
+        ctx: Context<SetSpendPolicy>,
+        delegate: Pubkey,
+        period_cap_usdc: u64,
+        period_secs: i64,
+        allowed_recipient: Pubkey,
+        merchants: Vec<Pubkey>,
+    ) -> Result<()> {
+        require!(period_secs > 0, LedgerlineError::InvalidParams);
+        require!(
+            merchants.len() <= MAX_MERCHANTS,
+            LedgerlineError::InvalidParams
+        );
+        let now = Clock::get()?.unix_timestamp;
+        let policy = &mut ctx.accounts.spend_policy;
+        policy.line = ctx.accounts.line.key();
+        policy.delegate = delegate;
+        policy.period_cap_usdc = period_cap_usdc;
+        policy.spent_this_period = 0;
+        policy.period_start = now;
+        policy.period_secs = period_secs;
+        policy.allowed_recipient = allowed_recipient;
+        policy.merchants = [Pubkey::default(); MAX_MERCHANTS];
+        for (i, m) in merchants.iter().enumerate() {
+            policy.merchants[i] = *m;
+        }
+        policy.n_merchants = merchants.len() as u8;
+        policy.bump = ctx.bumps.spend_policy;
+        msg!(
+            "ledgerline: spend policy delegate {} cap {}",
+            delegate,
+            period_cap_usdc
+        );
         Ok(())
     }
 
@@ -299,6 +357,17 @@ pub mod ledgerline {
 
         let mint = ctx.accounts.mint.key();
         let line = &mut ctx.accounts.line;
+        let fresh = CollateralSlot {
+            mint,
+            vault_ata: ctx.accounts.vault.key(),
+            raw_amount: received,
+            multiplier_bits,
+            market_kind: ctx.accounts.asset.market_kind,
+            in_use: true,
+            decimals: ctx.accounts.asset.decimals,
+            last_price: Fixed::ZERO,
+            last_ltv_bps: 0,
+        };
         match line.find_slot(&mint) {
             Some(i) => {
                 let slot = &mut line.collateral[i];
@@ -307,22 +376,20 @@ pub mod ledgerline {
                     .checked_add(received)
                     .ok_or(LedgerlineError::Overflow)?;
                 slot.multiplier_bits = multiplier_bits;
+                slot.decimals = ctx.accounts.asset.decimals;
             }
             None => {
-                require!(
-                    (line.n_collateral as usize) < MAX_COLLATERAL,
-                    LedgerlineError::CollateralFull
-                );
-                let i = line.n_collateral as usize;
-                line.collateral[i] = CollateralSlot {
-                    mint,
-                    vault_ata: ctx.accounts.vault.key(),
-                    raw_amount: received,
-                    multiplier_bits,
-                    market_kind: ctx.accounts.asset.market_kind,
-                    in_use: true,
-                };
-                line.n_collateral += 1;
+                if let Some(i) = line.vacant_slot() {
+                    line.collateral[i] = fresh;
+                } else {
+                    require!(
+                        (line.n_collateral as usize) < MAX_COLLATERAL,
+                        LedgerlineError::CollateralFull
+                    );
+                    let i = line.n_collateral as usize;
+                    line.collateral[i] = fresh;
+                    line.n_collateral += 1;
+                }
             }
         }
         line.updated_at = Clock::get()?.unix_timestamp;
@@ -336,10 +403,15 @@ pub mod ledgerline {
     }
 
     /// Return collateral, but only if the line stays healthy afterwards.
+    ///
+    /// While debt is outstanding the last sizing must still be fresh, and each
+    /// slot is revalued from the price and LTV stored at that sizing — never
+    /// from a raw-token share of the blended limit.
     pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
         ctx.accounts.config.require_active()?;
         require!(amount > 0, LedgerlineError::ZeroAmount);
 
+        let now = Clock::get()?.unix_timestamp;
         let line = &ctx.accounts.line;
         let i = line
             .find_slot(&ctx.accounts.mint.key())
@@ -351,25 +423,28 @@ pub mod ledgerline {
 
         let remaining = line.collateral[i].raw_amount - amount;
         let owed = line.total_debt();
-
-        // No fresh price is available here, so apportion the last sizing
-        // pro-rata. This is conservative for the common single-asset line.
-        let slot_credit = slot_credit_at_last_sizing(line, i)?;
-        let scaled = if remaining == 0 {
-            0
-        } else {
-            u64::try_from(
-                (slot_credit as u128)
-                    .checked_mul(remaining as u128)
-                    .and_then(|n| n.checked_div(line.collateral[i].raw_amount.max(1) as u128))
-                    .ok_or(LedgerlineError::Overflow)?,
-            )
-            .unwrap_or(u64::MAX)
-        };
-        let credit_after = line
-            .credit_limit_usdc
-            .saturating_sub(slot_credit.saturating_sub(scaled));
-        require!(credit_after >= owed, LedgerlineError::WithdrawalUnsafe);
+        if owed > 0 {
+            let pre_ipo = line
+                .collateral
+                .iter()
+                .take(line.n_collateral as usize)
+                .any(|s| s.in_use && s.market_kind == MarketKind::PreIpo);
+            let window = if pre_ipo {
+                PRE_IPO_MAX_SIZING_AGE_SECS
+            } else {
+                MAX_SIZING_AGE_SECS
+            };
+            require!(
+                now.saturating_sub(line.last_sizing_ts) <= window,
+                if pre_ipo {
+                    LedgerlineError::PreIpoSizingStale
+                } else {
+                    LedgerlineError::StalePrice
+                }
+            );
+            let credit_after = credit_after_withdraw(line, i, remaining)?;
+            require!(credit_after >= owed, LedgerlineError::WithdrawalUnsafe);
+        }
 
         let seeds = &[LINE_SEED, line.owner.as_ref(), &[line.bump][..]];
         let signer = &[&seeds[..]];
@@ -391,11 +466,14 @@ pub mod ledgerline {
         let line = &mut ctx.accounts.line;
         line.collateral[i].raw_amount = remaining;
         if remaining == 0 {
-            line.collateral[i].in_use = false;
+            line.release_slot(i);
         }
-        line.credit_limit_usdc = credit_after;
-        line.available_credit_usdc = credit_after.saturating_sub(owed);
-        line.updated_at = Clock::get()?.unix_timestamp;
+        if owed > 0 {
+            revalue_line(line)?;
+            let owed_now = line.total_debt();
+            line.available_credit_usdc = line.credit_limit_usdc.saturating_sub(owed_now);
+        }
+        line.updated_at = now;
         Ok(())
     }
 
@@ -449,9 +527,21 @@ pub mod ledgerline {
             marks,
             pyth_infos,
             &config.pyth_receiver,
+            config.permissive_pricing,
             clock.unix_timestamp,
             session,
         )?;
+
+        let slots_now: Vec<CollateralSlot> = line.collateral[..n].to_vec();
+        for i in 0..n {
+            require!(
+                assets[i].enabled && assets[i].stock_mint == slots_now[i].mint,
+                LedgerlineError::FeedMismatch
+            );
+        }
+        if config.permissive_pricing {
+            msg!("ledgerline: resize using permissive pricing");
+        }
 
         // Accrue interest up to now so sizing sees the true obligation.
         let elapsed = clock.unix_timestamp.saturating_sub(line.last_interest_ts);
@@ -467,15 +557,11 @@ pub mod ledgerline {
         let positions: Vec<PricedPosition> = slots
             .iter()
             .enumerate()
-            .filter_map(|(i, slot)| {
-                let asset = assets
-                    .iter()
-                    .find(|a| a.enabled && a.stock_mint == slot.mint)?;
-                Some(PricedPosition {
-                    slot,
-                    asset,
-                    mark: marks[i],
-                })
+            .filter(|(_, slot)| slot.in_use)
+            .map(|(i, slot)| PricedPosition {
+                slot,
+                asset: &assets[i],
+                mark: marks[i],
             })
             .collect();
 
@@ -523,6 +609,15 @@ pub mod ledgerline {
         );
 
         let line = &mut ctx.accounts.line;
+        for i in 0..n {
+            if !line.collateral[i].in_use {
+                continue;
+            }
+            let ltv = effective_ltv_bps(&assets[i], session, &marks[i])?;
+            line.collateral[i].last_price = marks[i].price;
+            line.collateral[i].last_ltv_bps = u16::try_from(ltv.min(10_000)).unwrap_or(10_000);
+            line.collateral[i].decimals = assets[i].decimals;
+        }
         line.last_sizing_ts = clock.unix_timestamp;
         line.last_session = session;
         line.collateral_usdc = sizing.collateral_usdc;
@@ -543,6 +638,10 @@ pub mod ledgerline {
         let clock = Clock::get()?;
         let fee_bps = ctx.accounts.config.fee_bps_draw;
         let reserve_bump = ctx.accounts.config.reserve_bump;
+        let owner_key = ctx.accounts.line.owner;
+        let line_key = ctx.accounts.line.key();
+        let authority = ctx.accounts.authority.key();
+        let recipient = ctx.accounts.recipient.key();
 
         let line = &mut ctx.accounts.line;
         let elapsed = clock.unix_timestamp.saturating_sub(line.last_interest_ts);
@@ -557,6 +656,17 @@ pub mod ledgerline {
             line.available_credit_usdc >= total_debt_increase,
             LedgerlineError::InsufficientCredit
         );
+
+        authorize_draw(
+            owner_key,
+            line_key,
+            &authority,
+            &recipient,
+            total_debt_increase,
+            ctx.accounts.spend_policy.as_deref_mut(),
+            clock.unix_timestamp,
+        )?;
+        let line = &mut ctx.accounts.line;
 
         // Pre-IPO collateral may only be drawn against a sizing from the
         // last two minutes. A private mark sits unchanged between issuer
@@ -629,9 +739,26 @@ pub mod ledgerline {
     }
 
     /// Repay debt. Called by the user, or by the dividend engine on their behalf.
+    /// Overpayment is refused: only the outstanding obligation (principal plus
+    /// interest accrued up to now) is pulled from the payer.
     pub fn repay(ctx: Context<Repay>, amount: u64) -> Result<()> {
         require!(amount > 0, LedgerlineError::ZeroAmount);
         let clock = Clock::get()?;
+
+        let line = &mut ctx.accounts.line;
+        let elapsed = clock.unix_timestamp.saturating_sub(line.last_interest_ts);
+        let interest = accrue_interest(line.usdc_debt, line.interest_apr_bps, elapsed)?;
+        line.accrued_interest = line.accrued_interest.saturating_add(interest);
+        line.last_interest_ts = clock.unix_timestamp;
+        let owed = line.total_debt();
+        require!(owed > 0, LedgerlineError::ZeroAmount);
+        let pay = amount.min(owed);
+        if pay < amount {
+            msg!(
+                "ledgerline: repay capped at outstanding debt {} (requested {})",
+                pay, amount
+            );
+        }
 
         token_interface::transfer_checked(
             CpiContext::new(
@@ -643,14 +770,13 @@ pub mod ledgerline {
                     authority: ctx.accounts.payer_authority.to_account_info(),
                 },
             ),
-            amount,
+            pay,
             ctx.accounts.usdc_mint.decimals,
         )?;
 
-        let line = &mut ctx.accounts.line;
         // Interest is cleared first so the principal actually goes down.
-        let to_interest = amount.min(line.accrued_interest);
-        let to_principal = amount.saturating_sub(to_interest);
+        let to_interest = pay.min(line.accrued_interest);
+        let to_principal = pay.saturating_sub(to_interest);
         line.accrued_interest = line.accrued_interest.saturating_sub(to_interest);
         line.usdc_debt = line.usdc_debt.saturating_sub(to_principal);
 
@@ -658,7 +784,7 @@ pub mod ledgerline {
         line.available_credit_usdc = line.credit_limit_usdc.saturating_sub(owed);
         line.updated_at = clock.unix_timestamp;
 
-        msg!("ledgerline: repaid ${}", amount / 1_000_000);
+        msg!("ledgerline: repaid ${}", pay / 1_000_000);
         Ok(())
     }
 
@@ -723,6 +849,7 @@ pub mod ledgerline {
             delta > 0 && (delta as u64) <= ctx.accounts.asset.max_multiplier_delta_bps as u64,
             LedgerlineError::CorporateActionRejected
         );
+        dividend_mark_ok(slot.last_price, mark.price)?;
 
         let d = compute_dividend(
             slot.raw_amount,
@@ -834,61 +961,67 @@ pub mod ledgerline {
         require!(repay_amount > 0, LedgerlineError::ZeroAmount);
         let now = Clock::get()?.unix_timestamp;
 
-        let line = &ctx.accounts.line;
-        let debt = line.total_debt();
-        require!(debt > 0, LedgerlineError::OutstandingDebt);
-        require!(
-            now.saturating_sub(line.last_sizing_ts) <= MAX_SIZING_AGE_SECS,
-            LedgerlineError::StalePrice
-        );
+        let (owner, bump, prev_available, slot_idx, held, seize, ltv_bps) = {
+            let line = &mut ctx.accounts.line;
+            let elapsed = now.saturating_sub(line.last_interest_ts);
+            let interest = accrue_interest(line.usdc_debt, line.interest_apr_bps, elapsed)?;
+            line.accrued_interest = line.accrued_interest.saturating_add(interest);
+            line.last_interest_ts = now;
+            let debt = line.total_debt();
+            require!(debt > 0, LedgerlineError::OutstandingDebt);
+            require!(
+                now.saturating_sub(line.last_sizing_ts) <= MAX_SIZING_AGE_SECS,
+                LedgerlineError::StalePrice
+            );
 
-        let collateral = line.collateral_usdc;
-        let ltv_bps = if collateral == 0 {
-            u32::MAX
-        } else {
-            u32::try_from(debt as u128 * 10_000 / collateral as u128).unwrap_or(u32::MAX)
-        };
+            let collateral = line.collateral_usdc;
+            let ltv_bps = if collateral == 0 {
+                u32::MAX
+            } else {
+                u32::try_from(debt as u128 * 10_000 / collateral as u128).unwrap_or(u32::MAX)
+            };
 
-        match liquidation_decision(line.last_session, ltv_bps, &ctx.accounts.asset) {
-            LiqDecision::Healthy => return Err(error!(LedgerlineError::LiquidationDeferred)),
-            LiqDecision::DeferredUntilOpen => {
-                msg!(
-                    "ledgerline: line {} at {} bps but the market is closed; deferring",
-                    line.key(),
-                    ltv_bps
-                );
-                return Err(error!(LedgerlineError::LiquidationDeferred));
+            match liquidation_decision(line.last_session, ltv_bps, &ctx.accounts.asset) {
+                LiqDecision::Healthy => return Err(error!(LedgerlineError::LiquidationDeferred)),
+                LiqDecision::DeferredUntilOpen => {
+                    msg!(
+                        "ledgerline: line {} at {} bps but the market is closed; deferring",
+                        line.key(),
+                        ltv_bps
+                    );
+                    return Err(error!(LedgerlineError::LiquidationDeferred));
+                }
+                LiqDecision::Liquidatable => {}
             }
-            LiqDecision::Liquidatable => {}
-        }
 
-        require!(repay_amount <= debt, LedgerlineError::InsufficientCredit);
+            require!(repay_amount <= debt, LedgerlineError::InsufficientCredit);
 
-        // Collateral seized is proportional to the share of the debt repaid,
-        // plus the liquidator's bonus, and never more than the slot holds.
-        let slot_idx = {
-            let line = &ctx.accounts.line;
-            line.find_slot(&ctx.accounts.mint.key())
-                .ok_or(LedgerlineError::SlotNotFound)?
+            let slot_idx = line
+                .find_slot(&ctx.accounts.mint.key())
+                .ok_or(LedgerlineError::SlotNotFound)?;
+            let held = line.collateral[slot_idx].raw_amount;
+            let price = line.collateral[slot_idx].last_price;
+            let multiplier = Fixed::from_f64_bits(line.collateral[slot_idx].multiplier_bits)
+                .map_err(|_| LedgerlineError::Math)?;
+            let seize = seizure_raw(
+                repay_amount,
+                price,
+                line.collateral[slot_idx].decimals,
+                multiplier,
+                ctx.accounts.asset.liquidation_bonus_bps,
+                held,
+            )?;
+            require!(seize > 0, LedgerlineError::ZeroAmount);
+            (
+                line.owner,
+                line.bump,
+                line.available_credit_usdc,
+                slot_idx,
+                held,
+                seize,
+                ltv_bps,
+            )
         };
-        let held = ctx.accounts.line.collateral[slot_idx].raw_amount;
-        let base = u64::try_from(
-            (held as u128)
-                .checked_mul(repay_amount as u128)
-                .and_then(|n| n.checked_div(debt as u128))
-                .ok_or(LedgerlineError::Overflow)?,
-        )
-        .unwrap_or(u64::MAX);
-        let bonus_bps = ctx.accounts.asset.liquidation_bonus_bps as u128;
-        let seize = u64::try_from(
-            (base as u128)
-                .checked_mul(10_000 + bonus_bps)
-                .and_then(|n| n.checked_div(10_000))
-                .ok_or(LedgerlineError::Overflow)?,
-        )
-        .unwrap_or(u64::MAX)
-        .min(held);
-        require!(seize > 0, LedgerlineError::ZeroAmount);
 
         // Fee-aware payout: the bonus is what makes liquidation worth doing,
         // and a mint transfer fee would quietly tax it off the liquidator.
@@ -918,8 +1051,6 @@ pub mod ledgerline {
         )?;
 
         // Collateral out to the liquidator, signed for by the line PDA.
-        let owner = ctx.accounts.line.owner;
-        let bump = ctx.accounts.line.bump;
         let seeds = &[LINE_SEED, owner.as_ref(), &[bump][..]];
         let signer = &[&seeds[..]];
         token_interface::transfer_checked(
@@ -945,10 +1076,17 @@ pub mod ledgerline {
             .saturating_sub(repay_amount.saturating_sub(to_interest));
         line.collateral[slot_idx].raw_amount = held - payout;
         if line.collateral[slot_idx].raw_amount == 0 {
-            line.collateral[slot_idx].in_use = false;
+            line.release_slot(slot_idx);
         }
+        revalue_line(line)?;
         let owed = line.total_debt();
-        line.available_credit_usdc = line.credit_limit_usdc.saturating_sub(owed);
+        let natural = line.credit_limit_usdc.saturating_sub(owed);
+        if natural > prev_available {
+            line.credit_limit_usdc = owed.saturating_add(prev_available);
+            line.available_credit_usdc = prev_available;
+        } else {
+            line.available_credit_usdc = natural;
+        }
         line.updated_at = now;
         emit!(LiquidationEvent {
             line: line.key(),
@@ -1004,6 +1142,10 @@ pub mod ledgerline {
                 .user_usdc
                 .as_ref()
                 .ok_or(LedgerlineError::FeedMismatch)?;
+            require!(
+                dest.owner == ctx.accounts.line.owner,
+                LedgerlineError::RecipientNotAllowed
+            );
             token_interface::transfer_checked(
                 CpiContext::new(
                     ctx.accounts.token_program.to_account_info(),
@@ -1070,38 +1212,169 @@ pub mod ledgerline {
         Ok(())
     }
 
+    /// Move harvested collateral out of the treasury. Admin only.
+    /// The treasury token account is owned by the config PDA; nothing else can sign for it.
+    pub fn sweep_treasury(ctx: Context<SweepTreasury>, amount: u64) -> Result<()> {
+        require!(amount > 0, LedgerlineError::ZeroAmount);
+        require!(
+            ctx.accounts.treasury.amount >= amount,
+            LedgerlineError::InsufficientCollateral
+        );
+        let seeds = &[CONFIG_SEED, &[ctx.accounts.config.bump][..]];
+        let signer = &[&seeds[..]];
+        token_interface::transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.treasury.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.destination.to_account_info(),
+                    authority: ctx.accounts.config.to_account_info(),
+                },
+                signer,
+            ),
+            amount,
+            ctx.accounts.mint.decimals,
+        )?;
+        msg!("ledgerline: swept {} raw from treasury", amount);
+        Ok(())
+    }
+
     /// Close the line once debt is repaid and collateral withdrawn.
     ///
-    /// Returning collateral needs a vault and destination account per mint,
-    /// which does not fit a variable-length account list. The borrower
-    /// withdraws each slot first — which re-checks health — then closes.
-    pub fn close_line(ctx: Context<CloseLine>) -> Result<()> {
+    /// Remaining accounts are the line's vault token accounts (zero balance).
+    /// Each is closed and its rent returned to the owner.
+    pub fn close_line<'info>(
+        ctx: Context<'_, '_, 'info, 'info, CloseLine<'info>>,
+    ) -> Result<()> {
         let line = &ctx.accounts.line;
         require!(line.total_debt() == 0, LedgerlineError::OutstandingDebt);
         require!(
-            line.active_collateral().iter().all(|s| s.raw_amount == 0),
+            line.n_collateral == 0
+                || line
+                    .active_collateral()
+                    .iter()
+                    .all(|s| !s.in_use || s.raw_amount == 0),
             LedgerlineError::CollateralRemaining
         );
+        let owner = line.owner;
+        let bump = line.bump;
+        let line_key = line.key();
+        let destination = ctx.accounts.owner.to_account_info();
+        let authority = ctx.accounts.line.to_account_info();
+        let token_program = ctx.accounts.token_program.to_account_info();
+        let seeds = &[LINE_SEED, owner.as_ref(), &[bump][..]];
+        let signer = &[&seeds[..]];
+        for info in ctx.remaining_accounts.iter() {
+            let (mint, amount) = {
+                let data = info
+                    .try_borrow_data()
+                    .map_err(|_| error!(LedgerlineError::Math))?;
+                require!(data.len() >= 72, LedgerlineError::FeedMismatch);
+                let mint = Pubkey::try_from(&data[0..32]).map_err(|_| error!(LedgerlineError::Math))?;
+                let amount = u64::from_le_bytes(data[64..72].try_into().unwrap());
+                (mint, amount)
+            };
+            require!(amount == 0, LedgerlineError::CollateralRemaining);
+            let (expected, _) = Pubkey::find_program_address(
+                &[VAULT_SEED, line_key.as_ref(), mint.as_ref()],
+                &crate::ID,
+            );
+            require!(info.key() == expected, LedgerlineError::FeedMismatch);
+            token_interface::close_account(
+                CpiContext::new_with_signer(
+                    token_program.clone(),
+                    CloseAccount {
+                        account: info.clone(),
+                        destination: destination.clone(),
+                        authority: authority.clone(),
+                    },
+                    signer,
+                ),
+            )?;
+        }
         Ok(())
     }
 }
 
-/// Per-slot credit contribution implied by the last sizing, used by `withdraw`
-/// to re-check health without a fresh price.
-fn slot_credit_at_last_sizing(line: &CreditLine, i: usize) -> Result<u64> {
-    if line.n_collateral <= 1 {
-        return Ok(line.credit_limit_usdc);
+/// Credit limit if slot `i` were reduced to `remaining`, using stored prices.
+fn credit_after_withdraw(line: &CreditLine, i: usize, remaining: u64) -> Result<u64> {
+    let mut total = 0u64;
+    for (idx, slot) in line.collateral.iter().take(line.n_collateral as usize).enumerate() {
+        if !slot.in_use {
+            continue;
+        }
+        let mut probe = *slot;
+        if idx == i {
+            probe.raw_amount = remaining;
+            if remaining == 0 {
+                probe.in_use = false;
+            }
+        }
+        total = total
+            .checked_add(stored_slot_credit_usdc(&probe)?)
+            .ok_or(LedgerlineError::Overflow)?;
     }
-    let total_raw: u128 = line
-        .active_collateral()
-        .iter()
-        .map(|s| s.raw_amount as u128)
-        .sum();
-    if total_raw == 0 {
-        return Ok(0);
+    Ok(total)
+}
+
+fn revalue_line(line: &mut CreditLine) -> Result<()> {
+    let mut collateral = 0u64;
+    let mut credit = 0u64;
+    for slot in line.collateral.iter().take(line.n_collateral as usize) {
+        if !slot.in_use {
+            continue;
+        }
+        collateral = collateral
+            .checked_add(stored_slot_value_usdc(slot)?)
+            .ok_or(LedgerlineError::Overflow)?;
+        credit = credit
+            .checked_add(stored_slot_credit_usdc(slot)?)
+            .ok_or(LedgerlineError::Overflow)?;
     }
-    let raw = line.collateral[i].raw_amount as u128;
-    Ok(u64::try_from(line.credit_limit_usdc as u128 * raw / total_raw).unwrap_or(u64::MAX))
+    line.collateral_usdc = collateral;
+    line.credit_limit_usdc = credit;
+    Ok(())
+}
+
+/// Owner may draw to any recipient. A delegate may draw only inside the cap
+/// and only to the allowed recipient or an allowlisted merchant.
+fn authorize_draw(
+    owner: Pubkey,
+    line_key: Pubkey,
+    authority: &Pubkey,
+    recipient: &Pubkey,
+    debt_increase: u64,
+    policy: Option<&mut SpendPolicy>,
+    now: i64,
+) -> Result<()> {
+    if *authority == owner {
+        return Ok(());
+    }
+    let policy = policy.ok_or(LedgerlineError::UnauthorizedDraw)?;
+    require!(policy.line == line_key, LedgerlineError::UnauthorizedDraw);
+    require!(
+        policy.delegate == *authority,
+        LedgerlineError::UnauthorizedDraw
+    );
+    require!(
+        policy.recipient_allowed(recipient),
+        LedgerlineError::RecipientNotAllowed
+    );
+    if now.saturating_sub(policy.period_start) >= policy.period_secs {
+        policy.spent_this_period = 0;
+        policy.period_start = now;
+    }
+    let next = policy
+        .spent_this_period
+        .checked_add(debt_increase)
+        .ok_or(LedgerlineError::Overflow)?;
+    require!(
+        next <= policy.period_cap_usdc,
+        LedgerlineError::DrawCapExceeded
+    );
+    policy.spent_this_period = next;
+    Ok(())
 }
 
 // ---------------------------------------------------------------- accounts --
@@ -1122,6 +1395,15 @@ pub struct InitConfig<'info> {
     pub reserve_ata: InterfaceAccount<'info, TokenAccount>,
 
     pub usdc_mint: InterfaceAccount<'info, Mint>,
+
+    /// Program data of this program. The signer must be its upgrade authority,
+    /// so `init_config` cannot be front-run by an arbitrary payer.
+    #[account(
+        seeds = [crate::ID.as_ref()],
+        bump,
+        seeds::program = anchor_lang::solana_program::bpf_loader_upgradeable::ID,
+    )]
+    pub program_data: Account<'info, ProgramData>,
 
     #[account(mut)]
     pub admin: Signer<'info>,
@@ -1184,6 +1466,9 @@ pub struct SetAssetParams<'info> {
         bump = asset_account.bump,
     )]
     pub asset_account: Account<'info, Asset>,
+
+    #[account(address = asset_account.stock_mint @ LedgerlineError::FeedMismatch)]
+    pub stock_mint: InterfaceAccount<'info, Mint>,
 
     pub admin: Signer<'info>,
 }
@@ -1310,7 +1595,6 @@ pub struct Draw<'info> {
     #[account(
         seeds = [CONFIG_SEED],
         bump = config.bump,
-        has_one = keeper @ LedgerlineError::NotKeeper,
         has_one = usdc_mint,
     )]
     pub config: Account<'info, Config>,
@@ -1327,8 +1611,43 @@ pub struct Draw<'info> {
     #[account(mut, token::mint = usdc_mint)]
     pub recipient: InterfaceAccount<'info, TokenAccount>,
 
-    pub keeper: Signer<'info>,
+    /// Line owner, or the delegate named on `spend_policy`.
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [SPEND_SEED, line.key().as_ref()],
+        bump = spend_policy.bump,
+    )]
+    pub spend_policy: Option<Account<'info, SpendPolicy>>,
+
     pub token_program: Interface<'info, TokenInterface>,
+}
+
+#[derive(Accounts)]
+pub struct SetSpendPolicy<'info> {
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        seeds = [LINE_SEED, owner.key().as_ref()],
+        bump = line.bump,
+        has_one = owner,
+    )]
+    pub line: Account<'info, CreditLine>,
+
+    #[account(
+        init_if_needed,
+        payer = owner,
+        space = SpendPolicy::LEN,
+        seeds = [SPEND_SEED, line.key().as_ref()],
+        bump,
+    )]
+    pub spend_policy: Account<'info, SpendPolicy>,
+
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -1504,7 +1823,8 @@ pub struct SettleDividend<'info> {
     pub usdc_from: InterfaceAccount<'info, TokenAccount>,
 
     /// Borrower's USDC. Only required when the payout mode is `Payout`.
-    #[account(mut, token::mint = usdc_mint)]
+    /// Must be owned by the line owner — a keeper cannot redirect the payout.
+    #[account(mut, token::mint = usdc_mint, token::authority = line.owner)]
     pub user_usdc: Option<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(mut)]
@@ -1528,6 +1848,34 @@ pub struct CloseLine<'info> {
 
     #[account(mut)]
     pub owner: Signer<'info>,
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
+#[derive(Accounts)]
+pub struct SweepTreasury<'info> {
+    #[account(
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        has_one = admin @ LedgerlineError::Unauthorized,
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        mut,
+        seeds = [TREASURY_SEED, mint.key().as_ref()],
+        bump,
+        token::mint = mint,
+        token::authority = config,
+    )]
+    pub treasury: InterfaceAccount<'info, TokenAccount>,
+
+    pub mint: InterfaceAccount<'info, Mint>,
+
+    #[account(mut, token::mint = mint)]
+    pub destination: InterfaceAccount<'info, TokenAccount>,
+
+    pub admin: Signer<'info>,
+    pub token_program: Interface<'info, TokenInterface>,
 }
 
 #[cfg(test)]
@@ -1588,6 +1936,11 @@ mod error_code_tests {
             LedgerlineError::PreIpoHarvestUnsupported,
             LedgerlineError::MintExtensionNotAllowed,
             LedgerlineError::TransferFeeTooHigh,
+            LedgerlineError::UnauthorizedDraw,
+            LedgerlineError::DrawCapExceeded,
+            LedgerlineError::RecipientNotAllowed,
+            LedgerlineError::DividendMarkDeviation,
+            LedgerlineError::NotUpgradeAuthority,
         ];
         let mut seen: Vec<u32> = Vec::new();
         for e in all.iter() {

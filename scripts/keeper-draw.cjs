@@ -1,5 +1,6 @@
 /**
- * Keeper-signed resize + draw for a borrower (Phantom cannot sign these).
+ * Keeper resize, then a delegate draw if the owner has approved this keeper.
+ * Owner-signed draws happen in the dashboard and do not need this script.
  *
  * Usage (from Ledgerline/):
  *   node scripts/keeper-draw.cjs <OWNER_ADDRESS> [USD]
@@ -79,19 +80,33 @@ async function main() {
   );
 
   const amount = new anchor.BN(Math.round(usd * 1_000_000));
+  const creditLine = await program.account.creditLine.fetch(line);
+  const spend = find([B("spend"), line.toBuffer()]);
+  const drawAccounts = {
+    config,
+    line,
+    reserveAta: reserve,
+    usdcMint: mints.usdcMint,
+    recipient,
+    authority: keeper.publicKey,
+    tokenProgram: TOKEN_PROGRAM_ID,
+  };
+  if (!creditLine.owner.equals(keeper.publicKey)) {
+    let policy;
+    try {
+      policy = await program.account.spendPolicy.fetch(spend);
+    } catch {
+      throw new Error(
+        "Owner has not approved this keeper. Draw from the dashboard as the line owner, or set a spend policy first."
+      );
+    }
+    if (!policy.delegate.equals(keeper.publicKey)) {
+      throw new Error(`spend policy delegate is ${policy.delegate.toBase58()}, not this keeper`);
+    }
+    drawAccounts.spendPolicy = spend;
+  }
   console.log(`draw $${usd}…`);
-  const drawSig = await program.methods
-    .draw(amount)
-    .accounts({
-      config,
-      line,
-      reserveAta: reserve,
-      usdcMint: mints.usdcMint,
-      recipient,
-      keeper: keeper.publicKey,
-      tokenProgram: TOKEN_PROGRAM_ID,
-    })
-    .rpc();
+  const drawSig = await program.methods.draw(amount).accounts(drawAccounts).rpc();
   console.log("draw", drawSig);
   console.log("https://explorer.solana.com/tx/" + drawSig + "?cluster=devnet");
 

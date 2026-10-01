@@ -273,5 +273,5 @@ export async function fetchAllMaybeCreditLine(
 }
 
 export function getCreditLineSize(): number {
-  return 541;
+  return 617;
 }

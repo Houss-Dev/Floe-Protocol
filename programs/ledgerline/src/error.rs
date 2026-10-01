@@ -95,4 +95,15 @@ pub enum LedgerlineError {
 
     #[msg("The collateral mint's transfer fee exceeds the asset's declared maximum")]
     TransferFeeTooHigh,
+
+    #[msg("Draw signer is neither the line owner nor the approved delegate")]
+    UnauthorizedDraw,
+    #[msg("Delegate draw would exceed the per-period spending cap")]
+    DrawCapExceeded,
+    #[msg("Draw recipient is not the owner's allowed account or an allowlisted merchant")]
+    RecipientNotAllowed,
+    #[msg("Dividend price mark deviates from the stored slot price beyond the bound")]
+    DividendMarkDeviation,
+    #[msg("Signer is not the program upgrade authority")]
+    NotUpgradeAuthority,
 }

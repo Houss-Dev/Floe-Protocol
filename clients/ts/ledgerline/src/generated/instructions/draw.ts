@@ -35,13 +35,14 @@ import {
 } from "@solana/kit";
 import {
   getAccountMetaFactory,
+  getAddressFromResolvedInstructionAccount,
   type InstructionAccountInput,
   type InstructionAccountInputAddress,
   type InstructionSignerInput,
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from "@solana/program-client-core";
-import { findConfigPda } from "../pdas";
+import { findConfigPda, findSpendPolicyPda } from "../pdas";
 import { LEDGERLINE_PROGRAM_ADDRESS } from "../programs";
 
 export const DRAW_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -59,7 +60,8 @@ export type DrawInstruction<
   TAccountReserveAta extends string | AccountMeta<string> = string,
   TAccountUsdcMint extends string | AccountMeta<string> = string,
   TAccountRecipient extends string | AccountMeta<string> = string,
-  TAccountKeeper extends string | AccountMeta<string> = string,
+  TAccountAuthority extends string | AccountMeta<string> = string,
+  TAccountSpendPolicy extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -82,10 +84,13 @@ export type DrawInstruction<
       TAccountRecipient extends string
         ? WritableAccount<TAccountRecipient>
         : TAccountRecipient,
-      TAccountKeeper extends string
-        ? ReadonlySignerAccount<TAccountKeeper> &
-            AccountSignerMeta<TAccountKeeper>
-        : TAccountKeeper,
+      TAccountAuthority extends string
+        ? ReadonlySignerAccount<TAccountAuthority> &
+            AccountSignerMeta<TAccountAuthority>
+        : TAccountAuthority,
+      TAccountSpendPolicy extends string
+        ? WritableAccount<TAccountSpendPolicy>
+        : TAccountSpendPolicy,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
@@ -133,7 +138,8 @@ export type DrawAsyncInput<
   TAccountReserveAta extends InstructionAccountInput = InstructionAccountInput,
   TAccountUsdcMint extends InstructionAccountInput = InstructionAccountInput,
   TAccountRecipient extends InstructionAccountInput = InstructionAccountInput,
-  TAccountKeeper extends InstructionSignerInput = InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
+  TAccountSpendPolicy extends InstructionAccountInput = InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
 > = {
@@ -143,7 +149,9 @@ export type DrawAsyncInput<
   usdcMint: TAccountUsdcMint;
   /** Where the borrowed USDC goes — the merchant, or the borrower's wallet. */
   recipient: TAccountRecipient;
-  keeper: TAccountKeeper;
+  /** Line owner, or the delegate named on `spend_policy`. */
+  authority: TAccountAuthority;
+  spendPolicy?: TAccountSpendPolicy;
   tokenProgram?: TAccountTokenProgram;
   amount: DrawInstructionDataArgs["amount"];
 };
@@ -154,7 +162,8 @@ export async function getDrawInstructionAsync<
   TAccountReserveAta extends InstructionAccountInput,
   TAccountUsdcMint extends InstructionAccountInput,
   TAccountRecipient extends InstructionAccountInput,
-  TAccountKeeper extends InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput,
+  TAccountSpendPolicy extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof LEDGERLINE_PROGRAM_ADDRESS,
 >(
@@ -164,7 +173,8 @@ export async function getDrawInstructionAsync<
     TAccountReserveAta,
     TAccountUsdcMint,
     TAccountRecipient,
-    TAccountKeeper,
+    TAccountAuthority,
+    TAccountSpendPolicy,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -192,8 +202,12 @@ export async function getDrawInstructionAsync<
       InstructionAccountInputAddress<TAccountRecipient>
     >,
     ResolvedInstructionAccountMeta<
-      TAccountKeeper,
-      InstructionAccountInputAddress<TAccountKeeper>
+      TAccountAuthority,
+      InstructionAccountInputAddress<TAccountAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountSpendPolicy,
+      InstructionAccountInputAddress<TAccountSpendPolicy>
     >,
     ResolvedInstructionAccountMeta<
       TAccountTokenProgram,
@@ -226,7 +240,16 @@ export async function getDrawInstructionAsync<
       isSigner: false,
       isWritable: true,
     },
-    keeper: { value: input.keeper ?? null, isSigner: true, isWritable: false },
+    authority: {
+      value: input.authority ?? null,
+      isSigner: true,
+      isWritable: false,
+    },
+    spendPolicy: {
+      value: input.spendPolicy ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     tokenProgram: {
       value: input.tokenProgram ?? null,
       isSigner: false,
@@ -245,6 +268,17 @@ export async function getDrawInstructionAsync<
   if (!accounts.config.value) {
     accounts.config.value = await findConfigPda({ programAddress });
   }
+  if (!accounts.spendPolicy.value) {
+    accounts.spendPolicy.value = await findSpendPolicyPda(
+      {
+        line: getAddressFromResolvedInstructionAccount(
+          "line",
+          accounts.line.value,
+        ),
+      },
+      { programAddress },
+    );
+  }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
@@ -257,7 +291,8 @@ export async function getDrawInstructionAsync<
       getAccountMeta("reserveAta", accounts.reserveAta),
       getAccountMeta("usdcMint", accounts.usdcMint),
       getAccountMeta("recipient", accounts.recipient),
-      getAccountMeta("keeper", accounts.keeper),
+      getAccountMeta("authority", accounts.authority),
+      getAccountMeta("spendPolicy", accounts.spendPolicy),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
     data: getDrawInstructionDataEncoder().encode(
@@ -287,8 +322,12 @@ export async function getDrawInstructionAsync<
       InstructionAccountInputAddress<TAccountRecipient>
     >,
     ResolvedInstructionAccountMeta<
-      TAccountKeeper,
-      InstructionAccountInputAddress<TAccountKeeper>
+      TAccountAuthority,
+      InstructionAccountInputAddress<TAccountAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountSpendPolicy,
+      InstructionAccountInputAddress<TAccountSpendPolicy>
     >,
     ResolvedInstructionAccountMeta<
       TAccountTokenProgram,
@@ -303,7 +342,8 @@ export type DrawInput<
   TAccountReserveAta extends InstructionAccountInput = InstructionAccountInput,
   TAccountUsdcMint extends InstructionAccountInput = InstructionAccountInput,
   TAccountRecipient extends InstructionAccountInput = InstructionAccountInput,
-  TAccountKeeper extends InstructionSignerInput = InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
+  TAccountSpendPolicy extends InstructionAccountInput = InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
 > = {
@@ -313,7 +353,9 @@ export type DrawInput<
   usdcMint: TAccountUsdcMint;
   /** Where the borrowed USDC goes — the merchant, or the borrower's wallet. */
   recipient: TAccountRecipient;
-  keeper: TAccountKeeper;
+  /** Line owner, or the delegate named on `spend_policy`. */
+  authority: TAccountAuthority;
+  spendPolicy?: TAccountSpendPolicy;
   tokenProgram?: TAccountTokenProgram;
   amount: DrawInstructionDataArgs["amount"];
 };
@@ -324,7 +366,8 @@ export function getDrawInstruction<
   TAccountReserveAta extends InstructionAccountInput,
   TAccountUsdcMint extends InstructionAccountInput,
   TAccountRecipient extends InstructionAccountInput,
-  TAccountKeeper extends InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput,
+  TAccountSpendPolicy extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof LEDGERLINE_PROGRAM_ADDRESS,
 >(
@@ -334,7 +377,8 @@ export function getDrawInstruction<
     TAccountReserveAta,
     TAccountUsdcMint,
     TAccountRecipient,
-    TAccountKeeper,
+    TAccountAuthority,
+    TAccountSpendPolicy,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -361,8 +405,12 @@ export function getDrawInstruction<
     InstructionAccountInputAddress<TAccountRecipient>
   >,
   ResolvedInstructionAccountMeta<
-    TAccountKeeper,
-    InstructionAccountInputAddress<TAccountKeeper>
+    TAccountAuthority,
+    InstructionAccountInputAddress<TAccountAuthority>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountSpendPolicy,
+    InstructionAccountInputAddress<TAccountSpendPolicy>
   >,
   ResolvedInstructionAccountMeta<
     TAccountTokenProgram,
@@ -394,7 +442,16 @@ export function getDrawInstruction<
       isSigner: false,
       isWritable: true,
     },
-    keeper: { value: input.keeper ?? null, isSigner: true, isWritable: false },
+    authority: {
+      value: input.authority ?? null,
+      isSigner: true,
+      isWritable: false,
+    },
+    spendPolicy: {
+      value: input.spendPolicy ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     tokenProgram: {
       value: input.tokenProgram ?? null,
       isSigner: false,
@@ -422,7 +479,8 @@ export function getDrawInstruction<
       getAccountMeta("reserveAta", accounts.reserveAta),
       getAccountMeta("usdcMint", accounts.usdcMint),
       getAccountMeta("recipient", accounts.recipient),
-      getAccountMeta("keeper", accounts.keeper),
+      getAccountMeta("authority", accounts.authority),
+      getAccountMeta("spendPolicy", accounts.spendPolicy),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
     data: getDrawInstructionDataEncoder().encode(
@@ -452,8 +510,12 @@ export function getDrawInstruction<
       InstructionAccountInputAddress<TAccountRecipient>
     >,
     ResolvedInstructionAccountMeta<
-      TAccountKeeper,
-      InstructionAccountInputAddress<TAccountKeeper>
+      TAccountAuthority,
+      InstructionAccountInputAddress<TAccountAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountSpendPolicy,
+      InstructionAccountInputAddress<TAccountSpendPolicy>
     >,
     ResolvedInstructionAccountMeta<
       TAccountTokenProgram,
@@ -474,8 +536,10 @@ export type ParsedDrawInstruction<
     usdcMint: TAccountMetas[3];
     /** Where the borrowed USDC goes — the merchant, or the borrower's wallet. */
     recipient: TAccountMetas[4];
-    keeper: TAccountMetas[5];
-    tokenProgram: TAccountMetas[6];
+    /** Line owner, or the delegate named on `spend_policy`. */
+    authority: TAccountMetas[5];
+    spendPolicy?: TAccountMetas[6] | undefined;
+    tokenProgram: TAccountMetas[7];
   };
   data: DrawInstructionData;
 };
@@ -488,12 +552,12 @@ export function parseDrawInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedDrawInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 7) {
+  if (instruction.accounts.length < 8) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 7,
+        expectedAccountMetas: 8,
       },
     );
   }
@@ -503,6 +567,12 @@ export function parseDrawInstruction<
     accountIndex += 1;
     return accountMeta;
   };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === LEDGERLINE_PROGRAM_ADDRESS
+      ? undefined
+      : accountMeta;
+  };
   return {
     programAddress: instruction.programAddress,
     accounts: {
@@ -511,7 +581,8 @@ export function parseDrawInstruction<
       reserveAta: getNextAccount(),
       usdcMint: getNextAccount(),
       recipient: getNextAccount(),
-      keeper: getNextAccount(),
+      authority: getNextAccount(),
+      spendPolicy: getNextOptionalAccount(),
       tokenProgram: getNextAccount(),
     },
     data: getDrawInstructionDataDecoder().decode(instruction.data),

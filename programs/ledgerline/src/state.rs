@@ -16,6 +16,13 @@ pub const VAULT_SEED: &[u8] = b"vault";
 pub const RESERVE_SEED: &[u8] = b"reserve";
 pub const DIV_SEED: &[u8] = b"div";
 pub const TREASURY_SEED: &[u8] = b"treasury";
+pub const SPEND_SEED: &[u8] = b"spend";
+
+/// Merchants a delegate may pay, besides the owner's allowed USDC account.
+pub const MAX_MERCHANTS: usize = 4;
+
+/// Largest relative gap between a harvest mark and the slot's stored price.
+pub const MAX_DIVIDEND_MARK_DEVIATION_BPS: u32 = 500;
 
 /// A liquidation may only act on a sizing no older than this. Liquidating
 /// against a stale mark is how a borrower gets unfairly wiped out.
@@ -89,6 +96,13 @@ pub struct CollateralSlot {
     /// line must stay a single-account hot path.
     pub market_kind: MarketKind,
     pub in_use: bool,
+    /// Mint decimals copied at deposit. Withdraw and liquidation revalue
+    /// without reloading every asset account.
+    pub decimals: u8,
+    /// USD per whole share at the last `resize_line`, 1e9 fixed point.
+    pub last_price: Fixed,
+    /// Effective LTV (bps) applied to this slot at the last sizing.
+    pub last_ltv_bps: u16,
 }
 
 /// A supported xStock mint and its risk parameters.
@@ -184,8 +198,11 @@ pub struct Config {
     pub base_apr_bps: u16,
 
     pub operating_state: OperatingState,
-    /// Pyth pull-oracle receiver program id. `Pubkey::default()` = sandbox (keeper marks allowed).
+    /// Pyth pull-oracle receiver program id. Unset does **not** trust keeper marks.
     pub pyth_receiver: Pubkey,
+    /// When true, `resize_line` may accept keeper marks with no Pyth accounts.
+    /// Off by default. Must be set explicitly by the admin.
+    pub permissive_pricing: bool,
     pub created_at: i64,
 }
 
@@ -300,6 +317,55 @@ impl CreditLine {
     pub fn find_slot(&self, mint: &Pubkey) -> Option<usize> {
         (0..self.n_collateral as usize)
             .find(|&i| self.collateral[i].in_use && self.collateral[i].mint == *mint)
+    }
+
+    /// First inactive slot inside the high-water mark, so a withdrawn mint
+    /// can be replaced without growing `n_collateral` to `CollateralFull`.
+    pub fn vacant_slot(&self) -> Option<usize> {
+        (0..self.n_collateral as usize).find(|&i| !self.collateral[i].in_use)
+    }
+
+    /// Drop a slot and compact so the prefix `[0, n_collateral)` stays dense.
+    pub fn release_slot(&mut self, i: usize) {
+        let n = self.n_collateral as usize;
+        if i >= n {
+            return;
+        }
+        let last = n - 1;
+        if i != last {
+            self.collateral[i] = self.collateral[last];
+        }
+        self.collateral[last] = CollateralSlot::default();
+        self.n_collateral = last as u8;
+    }
+}
+
+/// Owner-approved spending rights for a delegate (typically the keeper).
+/// PDA seeded `[SPEND_SEED, line]`.
+#[account]
+pub struct SpendPolicy {
+    pub line: Pubkey,
+    pub delegate: Pubkey,
+    /// Max USDC (6dp), including the draw fee, the delegate may disburse per period.
+    pub period_cap_usdc: u64,
+    pub spent_this_period: u64,
+    pub period_start: i64,
+    pub period_secs: i64,
+    /// Owner's own USDC token account, always an allowed recipient.
+    pub allowed_recipient: Pubkey,
+    pub merchants: [Pubkey; MAX_MERCHANTS],
+    pub n_merchants: u8,
+    pub bump: u8,
+}
+
+impl SpendPolicy {
+    pub const LEN: usize = 8 + std::mem::size_of::<SpendPolicy>();
+
+    pub fn recipient_allowed(&self, recipient: &Pubkey) -> bool {
+        if recipient == &self.allowed_recipient {
+            return true;
+        }
+        self.merchants[..self.n_merchants as usize].contains(recipient)
     }
 }
 

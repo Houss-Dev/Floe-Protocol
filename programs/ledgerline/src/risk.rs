@@ -6,7 +6,9 @@
 
 use crate::error::LedgerlineError;
 use crate::math::{usd_fixed_to_usdc6, Fixed, Session};
-use crate::state::{Asset, CollateralSlot, MarketKind, PriceMark};
+use crate::state::{
+    Asset, CollateralSlot, MarketKind, PriceMark, MAX_DIVIDEND_MARK_DEVIATION_BPS,
+};
 use anchor_lang::prelude::*;
 
 pub const SECS_PER_YEAR: i64 = 365 * 24 * 60 * 60;
@@ -217,6 +219,91 @@ pub fn liquidation_decision(session: Session, ltv_bps: u32, asset: &Asset) -> Li
         };
     }
     LiqDecision::Healthy
+}
+
+/// Simple interest on the outstanding principal.
+///
+/// Simple rather than compounding: the accrual is settled into `accrued_interest`
+/// on every interaction, so the effective behaviour is close enough while staying
+/// exact integer arithmetic with no rounding drift.
+/// USD value of a slot from the price and LTV stored at the last sizing.
+pub fn stored_slot_value_usdc(slot: &CollateralSlot) -> Result<u64> {
+    if !slot.in_use || slot.raw_amount == 0 || slot.last_price.is_zero() {
+        return Ok(0);
+    }
+    let multiplier =
+        Fixed::from_f64_bits(slot.multiplier_bits).map_err(|_| LedgerlineError::Math)?;
+    let value = slot_collateral_usd(slot.raw_amount, slot.decimals, multiplier, slot.last_price)?;
+    Ok(usd_fixed_to_usdc6(value))
+}
+
+/// Credit contribution of a slot from its stored price and LTV.
+pub fn stored_slot_credit_usdc(slot: &CollateralSlot) -> Result<u64> {
+    if !slot.in_use || slot.raw_amount == 0 || slot.last_price.is_zero() {
+        return Ok(0);
+    }
+    let multiplier =
+        Fixed::from_f64_bits(slot.multiplier_bits).map_err(|_| LedgerlineError::Math)?;
+    let value = slot_collateral_usd(slot.raw_amount, slot.decimals, multiplier, slot.last_price)?;
+    let ltv = slot.last_ltv_bps.min(10_000);
+    Ok(usd_fixed_to_usdc6(
+        value.mul_bps(ltv).map_err(|_| LedgerlineError::Math)?,
+    ))
+}
+
+/// Raw tokens to seize for `repay_usdc`, priced off the slot, plus the bonus.
+///
+/// `seize = repay_usd / (price per raw unit) * (1 + bonus)`. Capped at `held`.
+pub fn seizure_raw(
+    repay_usdc: u64,
+    price: Fixed,
+    decimals: u8,
+    multiplier: Fixed,
+    bonus_bps: u16,
+    held: u64,
+) -> Result<u64> {
+    require!(!price.is_zero(), LedgerlineError::StalePrice);
+    require!(!multiplier.is_zero(), LedgerlineError::Math);
+    let unit = Fixed::units(1, decimals)
+        .map_err(|_| LedgerlineError::Math)?
+        .checked_mul(multiplier)
+        .map_err(|_| LedgerlineError::Math)?
+        .checked_mul(price)
+        .map_err(|_| LedgerlineError::Math)?;
+    require!(!unit.is_zero(), LedgerlineError::Math);
+    let repay = crate::math::usdc6_to_usd_fixed(repay_usdc);
+    let boosted = repay
+        .v
+        .checked_mul(10_000u128 + bonus_bps as u128)
+        .ok_or(LedgerlineError::Overflow)?
+        / 10_000;
+    let raw_fixed = Fixed::new(boosted)
+        .checked_div(unit)
+        .map_err(|_| LedgerlineError::Math)?;
+    let raw = u64::try_from(raw_fixed.v / crate::math::SCALE).unwrap_or(u64::MAX);
+    Ok(raw.min(held))
+}
+
+/// Harvest marks must sit within `MAX_DIVIDEND_MARK_DEVIATION_BPS` of the stored price.
+pub fn dividend_mark_ok(stored: Fixed, supplied: Fixed) -> Result<()> {
+    require!(!stored.is_zero(), LedgerlineError::DividendMarkDeviation);
+    require!(!supplied.is_zero(), LedgerlineError::DividendMarkDeviation);
+    let (hi, lo) = if supplied.v > stored.v {
+        (supplied.v, stored.v)
+    } else {
+        (stored.v, supplied.v)
+    };
+    let bps = hi
+        .checked_sub(lo)
+        .ok_or(LedgerlineError::Overflow)?
+        .checked_mul(10_000)
+        .ok_or(LedgerlineError::Overflow)?
+        / stored.v;
+    require!(
+        bps <= MAX_DIVIDEND_MARK_DEVIATION_BPS as u128,
+        LedgerlineError::DividendMarkDeviation
+    );
+    Ok(())
 }
 
 /// Simple interest on the outstanding principal.
@@ -634,6 +721,9 @@ mod tests {
             multiplier_bits: f64::to_bits(1.0),
             market_kind: MarketKind::PublicEquity,
             in_use: true,
+            decimals: 6,
+            last_price: Fixed::ZERO,
+            last_ltv_bps: 0,
         };
         let positions = [PricedPosition {
             slot: &slot,
@@ -676,6 +766,9 @@ mod tests {
             multiplier_bits: f64::to_bits(1.0),
             market_kind: MarketKind::PublicEquity,
             in_use: true,
+            decimals: 6,
+            last_price: Fixed::ZERO,
+            last_ltv_bps: 0,
         };
         let positions = [PricedPosition {
             slot: &slot,
@@ -826,5 +919,46 @@ mod tests {
             .checked_mul(mult)
             .unwrap();
         assert_eq!(shares.to_whole_floor(), 1007);
+    }
+
+    #[test]
+    fn seizure_is_repay_over_price_plus_bonus() {
+        // $100/share, 6dp, multiplier 1. Repay $10 -> 0.1 share = 100_000 raw.
+        // 5% bonus -> 105_000 raw.
+        let price = Fixed::from_whole(100).unwrap();
+        let raw = seizure_raw(10_000_000, price, 6, Fixed::ONE, 500, 10_000_000).unwrap();
+        assert_eq!(raw, 105_000);
+        // Never more than the slot holds.
+        let capped = seizure_raw(10_000_000, price, 6, Fixed::ONE, 500, 50_000).unwrap();
+        assert_eq!(capped, 50_000);
+    }
+
+    #[test]
+    fn dividend_mark_rejects_a_wide_gap() {
+        let stored = Fixed::from_whole(100).unwrap();
+        assert!(dividend_mark_ok(stored, Fixed::from_whole(100).unwrap()).is_ok());
+        // 500 bps = $5 on $100 is the cap.
+        assert!(dividend_mark_ok(stored, Fixed::from_whole(105).unwrap()).is_ok());
+        assert!(dividend_mark_ok(stored, Fixed::from_whole(106).unwrap()).is_err());
+        assert!(dividend_mark_ok(Fixed::ZERO, stored).is_err());
+    }
+
+    #[test]
+    fn stored_credit_uses_price_times_ltv_not_raw_share() {
+        let mut cheap = CollateralSlot::default();
+        cheap.in_use = true;
+        cheap.raw_amount = 1_000_000; // 1 share
+        cheap.decimals = 6;
+        cheap.multiplier_bits = f64::to_bits(1.0);
+        cheap.last_price = Fixed::from_whole(10).unwrap();
+        cheap.last_ltv_bps = 5000;
+        let mut rich = cheap;
+        rich.last_price = Fixed::from_whole(1_000).unwrap();
+        // Same raw amount, 100x the price, 100x the credit.
+        let c = stored_slot_credit_usdc(&cheap).unwrap();
+        let r = stored_slot_credit_usdc(&rich).unwrap();
+        assert_eq!(c, 5_000_000); // $5
+        assert_eq!(r, 500_000_000); // $500
+        assert!(r > c * 50);
     }
 }

@@ -301,7 +301,7 @@
       {
         "kind": "accountNode",
         "name": "config",
-        "size": 442,
+        "size": 443,
         "data": {
           "kind": "structTypeNode",
           "fields": [
@@ -438,10 +438,26 @@
               "kind": "structFieldTypeNode",
               "name": "pythReceiver",
               "docs": [
-                "Pyth pull-oracle receiver program id. `Pubkey::default()` = sandbox (keeper marks allowed)."
+                "Pyth pull-oracle receiver program id. Unset does **not** trust keeper marks."
               ],
               "type": {
                 "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "permissivePricing",
+              "docs": [
+                "When true, `resize_line` may accept keeper marks with no Pyth accounts.",
+                "Off by default. Must be set explicitly by the admin."
+              ],
+              "type": {
+                "kind": "booleanTypeNode",
+                "size": {
+                  "kind": "numberTypeNode",
+                  "format": "u8",
+                  "endian": "le"
+                }
               }
             },
             {
@@ -466,7 +482,7 @@
       {
         "kind": "accountNode",
         "name": "creditLine",
-        "size": 541,
+        "size": 617,
         "data": {
           "kind": "structTypeNode",
           "fields": [
@@ -907,6 +923,135 @@
             "offset": 0
           }
         ]
+      },
+      {
+        "kind": "accountNode",
+        "name": "spendPolicy",
+        "size": 266,
+        "data": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "defaultValueStrategy": "omitted",
+              "type": {
+                "kind": "fixedSizeTypeNode",
+                "size": 8,
+                "type": {
+                  "kind": "bytesTypeNode"
+                }
+              },
+              "defaultValue": {
+                "kind": "bytesValueNode",
+                "data": "8b5ad11fcd0f44f3",
+                "encoding": "base16"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "line",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "delegate",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "periodCapUsdc",
+              "docs": [
+                "Max USDC (6dp), including the draw fee, the delegate may disburse per period."
+              ],
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "spentThisPeriod",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "periodStart",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "i64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "periodSecs",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "i64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "allowedRecipient",
+              "docs": [
+                "Owner's own USDC token account, always an allowed recipient."
+              ],
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "merchants",
+              "type": {
+                "kind": "arrayTypeNode",
+                "item": {
+                  "kind": "publicKeyTypeNode"
+                },
+                "count": {
+                  "kind": "fixedCountNode",
+                  "value": 4
+                }
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "nMerchants",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "bump",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              }
+            }
+          ]
+        },
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
       }
     ],
     "instructions": [
@@ -1013,9 +1158,8 @@
         "docs": [
           "Close the line once debt is repaid and collateral withdrawn.",
           "",
-          "Returning collateral needs a vault and destination account per mint,",
-          "which does not fit a variable-length account list. The borrower",
-          "withdraws each slot first — which re-checks health — then closes."
+          "Remaining accounts are the line's vault token accounts (zero balance).",
+          "Each is closed and its rent returned to the owner."
         ],
         "optionalAccountStrategy": "programId",
         "accounts": [
@@ -1046,6 +1190,18 @@
             "isWritable": true,
             "isSigner": true,
             "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "tokenProgram",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false,
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+              "identifier": "splToken"
+            }
           }
         ],
         "arguments": [
@@ -1303,10 +1459,40 @@
           },
           {
             "kind": "instructionAccountNode",
-            "name": "keeper",
+            "name": "authority",
             "isWritable": false,
             "isSigner": true,
-            "isOptional": false
+            "isOptional": false,
+            "docs": [
+              "Line owner, or the delegate named on `spend_policy`."
+            ],
+            "defaultValue": {
+              "kind": "identityValueNode"
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "spendPolicy",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": true,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "spendPolicy"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "line",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "line"
+                  }
+                }
+              ]
+            }
           },
           {
             "kind": "instructionAccountNode",
@@ -1657,6 +1843,38 @@
             "isWritable": false,
             "isSigner": false,
             "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "programData",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false,
+            "docs": [
+              "Program data of this program. The signer must be its upgrade authority,",
+              "so `init_config` cannot be front-run by an arbitrary payer."
+            ],
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaNode",
+                "name": "programData",
+                "programId": "BPFLoaderUpgradeab1e11111111111111111111111",
+                "seeds": [
+                  {
+                    "kind": "constantPdaSeedNode",
+                    "type": {
+                      "kind": "bytesTypeNode"
+                    },
+                    "value": {
+                      "kind": "bytesValueNode",
+                      "data": "CK5xutaXUwmdcLR8qh7cCZMXJ5fkqopk1P5NZEM3cLrN",
+                      "encoding": "base58"
+                    }
+                  }
+                ]
+              }
+            }
           },
           {
             "kind": "instructionAccountNode",
@@ -2084,7 +2302,9 @@
         "kind": "instructionNode",
         "name": "repay",
         "docs": [
-          "Repay debt. Called by the user, or by the dividend engine on their behalf."
+          "Repay debt. Called by the user, or by the dividend engine on their behalf.",
+          "Overpayment is refused: only the outstanding obligation (principal plus",
+          "interest accrued up to now) is pulled from the payer."
         ],
         "optionalAccountStrategy": "programId",
         "accounts": [
@@ -2307,6 +2527,13 @@
             "kind": "instructionAccountNode",
             "name": "assetAccount",
             "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "stockMint",
+            "isWritable": false,
             "isSigner": false,
             "isOptional": false
           },
@@ -2550,10 +2777,80 @@
       },
       {
         "kind": "instructionNode",
+        "name": "setPermissivePricing",
+        "docs": [
+          "Explicit opt-in for keeper marks when no Pyth accounts are supplied.",
+          "Off by default, including when `pyth_receiver` is unset."
+        ],
+        "optionalAccountStrategy": "programId",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "config",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "config"
+              }
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "admin",
+            "isWritable": false,
+            "isSigner": true,
+            "isOptional": false
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "a492359eeef0dc50",
+              "encoding": "base16"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "enabled",
+            "type": {
+              "kind": "booleanTypeNode",
+              "size": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              }
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "instructionNode",
         "name": "setPythReceiver",
         "docs": [
           "Pin the Pyth receiver for on-chain price verification (`resize_line`).",
-          "While unset (`default`), devnet may use keeper-supplied marks."
+          "Unset does not enable keeper marks — see `set_permissive_pricing`."
         ],
         "optionalAccountStrategy": "programId",
         "accounts": [
@@ -2602,6 +2899,173 @@
             "name": "pythReceiver",
             "type": {
               "kind": "publicKeyTypeNode"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "instructionNode",
+        "name": "setSpendPolicy",
+        "docs": [
+          "Owner approves a delegate, a per-period USDC cap, and who may receive draws."
+        ],
+        "optionalAccountStrategy": "programId",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "config",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "config"
+              }
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "line",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "line"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "owner",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "owner"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "spendPolicy",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "spendPolicy"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "line",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "line"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "owner",
+            "isWritable": true,
+            "isSigner": true,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "systemProgram",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false,
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "11111111111111111111111111111111",
+              "identifier": "systemProgram"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "1a92d53125d3f665",
+              "encoding": "base16"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "delegate",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "periodCapUsdc",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "periodSecs",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "i64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "allowedRecipient",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "merchants",
+            "type": {
+              "kind": "arrayTypeNode",
+              "item": {
+                "kind": "publicKeyTypeNode"
+              },
+              "count": {
+                "kind": "prefixedCountNode",
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u32",
+                  "endian": "le"
+                }
+              }
             }
           }
         ],
@@ -2694,7 +3158,8 @@
             "isSigner": false,
             "isOptional": true,
             "docs": [
-              "Borrower's USDC. Only required when the payout mode is `Payout`."
+              "Borrower's USDC. Only required when the payout mode is `Payout`.",
+              "Must be owned by the line owner — a keeper cannot redirect the payout."
             ]
           },
           {
@@ -2746,9 +3211,130 @@
       },
       {
         "kind": "instructionNode",
+        "name": "sweepTreasury",
+        "docs": [
+          "Move harvested collateral out of the treasury. Admin only.",
+          "The treasury token account is owned by the config PDA; nothing else can sign for it."
+        ],
+        "optionalAccountStrategy": "programId",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "config",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "config"
+              }
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "treasury",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "treasury"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "mint",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "mint"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "mint",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "destination",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "admin",
+            "isWritable": false,
+            "isSigner": true,
+            "isOptional": false
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "tokenProgram",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false,
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+              "identifier": "splToken"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "fixedSizeTypeNode",
+              "size": 8,
+              "type": {
+                "kind": "bytesTypeNode"
+              }
+            },
+            "defaultValue": {
+              "kind": "bytesValueNode",
+              "data": "7dcb04045722eea9",
+              "encoding": "base16"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "amount",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "instructionNode",
         "name": "withdraw",
         "docs": [
-          "Return collateral, but only if the line stays healthy afterwards."
+          "Return collateral, but only if the line stays healthy afterwards.",
+          "",
+          "While debt is outstanding the last sizing must still be fresh, and each",
+          "slot is revalued from the price and LTV stored at that sizing — never",
+          "from a raw-token share of the blended limit."
         ],
         "optionalAccountStrategy": "programId",
         "accounts": [
@@ -2954,6 +3540,42 @@
                   "format": "u8",
                   "endian": "le"
                 }
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "decimals",
+              "docs": [
+                "Mint decimals copied at deposit. Withdraw and liquidation revalue",
+                "without reloading every asset account."
+              ],
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "lastPrice",
+              "docs": [
+                "USD per whole share at the last `resize_line`, 1e9 fixed point."
+              ],
+              "type": {
+                "kind": "definedTypeLinkNode",
+                "name": "fixed"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "lastLtvBps",
+              "docs": [
+                "Effective LTV (bps) applied to this slot at the last sizing."
+              ],
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u16",
+                "endian": "le"
               }
             }
           ]
@@ -3241,6 +3863,30 @@
           {
             "kind": "variablePdaSeedNode",
             "name": "mint",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "pdaNode",
+        "name": "spendPolicy",
+        "seeds": [
+          {
+            "kind": "constantPdaSeedNode",
+            "type": {
+              "kind": "bytesTypeNode"
+            },
+            "value": {
+              "kind": "bytesValueNode",
+              "data": "E2Pm91d",
+              "encoding": "base58"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "line",
             "type": {
               "kind": "publicKeyTypeNode"
             }
@@ -4161,6 +4807,51 @@
         "message": "The collateral mint's transfer fee exceeds the asset's declared maximum",
         "docs": [
           "TransferFeeTooHigh: The collateral mint's transfer fee exceeds the asset's declared maximum"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "unauthorizedDraw",
+        "code": 6039,
+        "message": "Draw signer is neither the line owner nor the approved delegate",
+        "docs": [
+          "UnauthorizedDraw: Draw signer is neither the line owner nor the approved delegate"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "drawCapExceeded",
+        "code": 6040,
+        "message": "Delegate draw would exceed the per-period spending cap",
+        "docs": [
+          "DrawCapExceeded: Delegate draw would exceed the per-period spending cap"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "recipientNotAllowed",
+        "code": 6041,
+        "message": "Draw recipient is not the owner's allowed account or an allowlisted merchant",
+        "docs": [
+          "RecipientNotAllowed: Draw recipient is not the owner's allowed account or an allowlisted merchant"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "dividendMarkDeviation",
+        "code": 6042,
+        "message": "Dividend price mark deviates from the stored slot price beyond the bound",
+        "docs": [
+          "DividendMarkDeviation: Dividend price mark deviates from the stored slot price beyond the bound"
+        ]
+      },
+      {
+        "kind": "errorNode",
+        "name": "notUpgradeAuthority",
+        "code": 6043,
+        "message": "Signer is not the program upgrade authority",
+        "docs": [
+          "NotUpgradeAuthority: Signer is not the program upgrade authority"
         ]
       }
     ]

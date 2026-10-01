@@ -154,7 +154,10 @@ export type SettleDividendAsyncInput<
   usdcMint: TAccountUsdcMint;
   /** Keeper's USDC, holding the proceeds of the swap. */
   usdcFrom: TAccountUsdcFrom;
-  /** Borrower's USDC. Only required when the payout mode is `Payout`. */
+  /**
+   * Borrower's USDC. Only required when the payout mode is `Payout`.
+   * Must be owned by the line owner — a keeper cannot redirect the payout.
+   */
   userUsdc?: TAccountUserUsdc;
   keeper: TAccountKeeper;
   tokenProgram?: TAccountTokenProgram;
@@ -360,7 +363,10 @@ export type SettleDividendInput<
   usdcMint: TAccountUsdcMint;
   /** Keeper's USDC, holding the proceeds of the swap. */
   usdcFrom: TAccountUsdcFrom;
-  /** Borrower's USDC. Only required when the payout mode is `Payout`. */
+  /**
+   * Borrower's USDC. Only required when the payout mode is `Payout`.
+   * Must be owned by the line owner — a keeper cannot redirect the payout.
+   */
   userUsdc?: TAccountUserUsdc;
   keeper: TAccountKeeper;
   tokenProgram?: TAccountTokenProgram;
@@ -554,7 +560,10 @@ export type ParsedSettleDividendInstruction<
     usdcMint: TAccountMetas[4];
     /** Keeper's USDC, holding the proceeds of the swap. */
     usdcFrom: TAccountMetas[5];
-    /** Borrower's USDC. Only required when the payout mode is `Payout`. */
+    /**
+     * Borrower's USDC. Only required when the payout mode is `Payout`.
+     * Must be owned by the line owner — a keeper cannot redirect the payout.
+     */
     userUsdc?: TAccountMetas[6] | undefined;
     keeper: TAccountMetas[7];
     tokenProgram: TAccountMetas[8];
