@@ -15,8 +15,8 @@ The deployed Anchor program and TypeScript client still use the internal name **
 1. **Listing** — Admin registers each collateral mint with `add_asset`. The program reads the mint account (extensions, decimals, issuer controls such as freeze/fee config); callers cannot lie about issuer power or omit required extensions.
 2. **Collateral** — Users deposit Token-2022 mints with a `ScaledUiAmount` extension. Collateral credited is what the vault **actually receives** (transfer fees are measured on-chain, not trusted from config).
 3. **Credit line** — Per-user line: collateral slots, USDC debt, accrued interest, health, and available credit. Debt accrues interest at the line’s APR (`base_apr_bps` set at config init).
-4. **Sizing** — `resize_line` (keeper-signed) applies marks. LTV depends on asset tier and NYSE session (regular, extended, overnight, closed). Optional Pyth verification when `config.pyth_receiver` is set; devnet may use keeper marks (logged) when unset.
-5. **Draw & repay** — Draws disburse USDC from the protocol reserve and charge a configurable draw fee (`fee_bps_draw`). **Draws are keeper-signed in v1** (card/terminal model). Repay restores health. Draw freshness: **120s** since last sizing if the line holds pre-IPO collateral; **300s** if it holds public-equity collateral.
+4. **Sizing** — `resize_line` (keeper-signed) applies marks. LTV depends on asset tier and NYSE session (regular, extended, overnight, closed). Pyth verification runs when `config.pyth_receiver` is set. Unchecked keeper marks are allowed only when an admin turns on `permissive_pricing` (off by default); that path logs `PERMISSIVE PRICING`. Each mark must match the mint in that collateral slot.
+5. **Draw & repay** — Draws disburse USDC from the protocol reserve and charge a configurable draw fee (`fee_bps_draw`). The line owner can draw to any recipient. A keeper draws only after the owner sets a spend policy: a delegate, a per-period cap, and an allowed recipient (the owner's USDC account or an allowlisted merchant). Repay pulls at most the outstanding debt. Draw freshness: **120s** since last sizing if the line holds pre-IPO collateral; **300s** if it holds public-equity collateral.
 6. **Dividends** — On a multiplier bump, `harvest_dividend` trims collateral and records an idempotent `DividendEvent`; `settle_dividend` routes USDC to debt or payout mode per the line’s setting. **Pre-IPO assets reject harvest until IPO.** The keeper drives harvest/settle off-chain; the program enforces idempotency and amounts.
 7. **Liquidation** — Permissionless liquidators may repay debt and receive collateral at a bonus when LTV crosses the hard threshold. **Pre-IPO and closed-session public lines defer liquidation** between soft and hard floors when there is no on-chain book (`LiquidationDeferred`).
 
@@ -57,7 +57,13 @@ A dividend on a tokenized stock often **does not change raw token balances**. Th
 
 ## Devnet demo (what is real vs mock)
 
-**Real:** the `ledgerline` program on Solana devnet, Token-2022 deposit/withdraw paths, line state, keeper-signed resize/draw, on-chain guards (pre-IPO staleness, divergence, harvest block).
+**Real:** the `ledgerline` program on Solana devnet, Token-2022 deposit/withdraw paths, line state, keeper-signed resize, owner or delegate draws, on-chain guards (pre-IPO staleness, divergence, harvest block).
+
+![Dashboard](app/public/screenshots/dashboard-preview.png)
+
+**Demo video:** [floe-demo on Vimeo](https://vimeo.com/1231869243)
+
+Devnet Explorer transactions: `TODO — paste signatures` (program `CK5xutaXUwmdcLR8qh7cCZMXJ5fkqopk1P5NZEM3cLrN`)
 
 **Synthetic / operator-run:** mock xStock and USDC mints, price marks when no Pyth receiver is configured, and reserve funding for demos. Label this in submissions—see [docs/DEVNET.md](docs/DEVNET.md).
 
@@ -102,6 +108,27 @@ npm start   # one resize/mark tick; see KEEPER.md for loop and demo config
 ```
 
 See [keeper/KEEPER.md](keeper/KEEPER.md).
+
+---
+
+## Trust model
+
+`ledgerline` is the on-chain program name. Floe is the product. After these controls, a keeper can size lines, harvest dividends, and draw only when the owner has approved that delegate.
+
+The keeper can:
+
+- Submit price marks through `resize_line`. In strict mode those marks are checked against Pyth and each mark's mint must be the slot's mint. Permissive marks exist only if an admin sets `permissive_pricing`, and the program logs that path.
+- Draw USDC only as a delegate named on the owner's spend policy, only to the owner's USDC account or an allowlisted merchant, and only up to the per-period cap (the cap includes the draw fee).
+- Harvest a dividend only when the supplied mark stays within 500 bps of the price stored on that slot.
+
+The keeper cannot:
+
+- Draw to an arbitrary wallet, or draw at all, without the owner's signature or an owner-set spend policy.
+- Withdraw collateral, change the spend policy, or sweep the dividend treasury. Treasury sweep is admin-signed; the config PDA is the treasury authority.
+- Inflate available credit by liquidating. Liquidation accrues interest first, seizes collateral from the repay amount and the slot price (plus the bonus), then recomputes collateral value and the credit limit so available credit does not rise.
+- Pull a withdraw that leaves debt outstanding unless the last sizing is still inside the freshness window, and the remaining slots' stored price × LTV still cover that debt.
+
+The admin can pause the program, list assets, set the permissive-pricing flag, and sweep the treasury. `init_config` must be signed by the program's upgrade authority, so a stranger cannot front-run the config account.
 
 ---
 
