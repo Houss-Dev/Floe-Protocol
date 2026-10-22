@@ -4,6 +4,7 @@
   "private": true,
   "license": "MIT",
   "scripts": {
+    "postinstall": "npm install --prefix clients/ts/ledgerline --no-audit --no-fund",
     "dev": "npm run dev --prefix app",
     "dev:clean": "npm run dev:clean --prefix app",
     "dev:app": "npm run dev --prefix app",

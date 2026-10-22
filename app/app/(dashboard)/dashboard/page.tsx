@@ -10,6 +10,7 @@ import { DevnetSandboxLazy } from "../../../components/DevnetSandboxLazy";
 import { devnetSandboxEnabled } from "../../../lib/flags";
 import { ClientOnly } from "../../../components/ClientOnly";
 import { DEMO, usdc6 } from "../../../lib/constants";
+import type { Address } from "@solana/kit";
 import { useConnectedWallet } from "@solana/kit-plugin-wallet/react";
 import { client } from "../../../lib/solana";
 import { findLinePda, MarketKind, type CreditLine } from "@ledgerline/ledgerline";
@@ -39,7 +40,7 @@ export default function DashboardPage() {
     let cancel = false;
     setLineStatus("loading");
     (async () => {
-      const [line] = await findLinePda({ owner: wallet });
+      const [line] = await findLinePda({ owner: wallet as Address });
       const fetched = await client.ledgerline.accounts.creditLine.fetchMaybe(line);
       if (cancel) return;
       if (!fetched.exists) {
