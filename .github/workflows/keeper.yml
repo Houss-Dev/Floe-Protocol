@@ -14,6 +14,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - run: npm install --no-audit --no-fund
+      - name: install TS client (@solana/kit for generated Codama code)
+        run: npm install --prefix clients/ts/ledgerline --no-audit --no-fund
       - name: install keeper (Kit client)
         working-directory: keeper
         run: npm install --no-audit --no-fund
